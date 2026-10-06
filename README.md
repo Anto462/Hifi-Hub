@@ -11,10 +11,23 @@ Windows desktop app. Everything runs locally.
 <details>
 <summary>More screenshots</summary>
 
-![Library view](.)
-![Now playing](.)
-![Playlist](.)
-![Import](.)
+<p align="center">
+  <a href="https://github.com/user-attachments/assets/b8368dfc-0db1-4147-90b6-10ab1c256b08">
+    <img src="https://github.com/user-attachments/assets/b8368dfc-0db1-4147-90b6-10ab1c256b08" width="200" alt="Library view" />
+  </a>
+  &nbsp;&nbsp;
+  <a href="https://github.com/user-attachments/assets/227fb4c9-263d-4ad0-9ca0-affe46b4ae2b">
+    <img src="https://github.com/user-attachments/assets/227fb4c9-263d-4ad0-9ca0-affe46b4ae2b" width="200" alt="Now playing" />
+  </a>
+  &nbsp;&nbsp;
+  <a href="https://github.com/user-attachments/assets/60e8d6f4-6916-44c9-9836-d100353bc440">
+    <img src="https://github.com/user-attachments/assets/60e8d6f4-6916-44c9-9836-d100353bc440" width="200" alt="Playlist" />
+  </a>
+  &nbsp;&nbsp;
+  <a href="https://github.com/user-attachments/assets/a5bc8bb0-5f78-4b76-9bfc-ee688c8b11db">
+    <img src="https://github.com/user-attachments/assets/a5bc8bb0-5f78-4b76-9bfc-ee688c8b11db" width="200" alt="Import" />
+  </a>
+</p>
 
 </details>
 
