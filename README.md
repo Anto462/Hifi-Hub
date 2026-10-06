@@ -1,28 +1,49 @@
-# HiFi-Hub
+# HiFi Hub
 
-Gestor y reproductor de bibliotecas musicales HIFI para Windows.
-Descarga, organiza y reproduce tu música desde un mismo HUB con herramientas extras pensadas en maximizar el disfrute del audio.
+A Hi-Fi music library manager and player for Windows. Import, organize, and play your music from a single hub with additional tools designed to maximize your audio enjoyment.
 
-Proyecto personal de software libre (ver `LICENSE.txt`).
+Windows desktop app. Everything runs locally.
 
-## Requisitos
+**English** · [Español](README.es.md)
 
-- Windows 10 u 11 (64 bits)
-- Python 3.11 o superior
-- Microsoft Edge WebView2 Runtime
-- .NET Framework 4.8
+![HiFi Hub](.)
 
-## Primeros pasos
+<details>
+<summary>More screenshots</summary>
 
-### 1. Descomprimir las herramientas (O puedes descargar cada herramienta listada por tu cuenta)
+![Library view](.)
+![Now playing](.)
+![Playlist](.)
+![Import](.)
 
-Dentro de `herramientas/` hay dos archivos comprimidos:
+</details>
+
+---
+
+## Download
+
+**[Download the latest release](https://github.com/Anto462/Hifi-Hub/releases/tag/Stable)**
+
+### Requirements
+
+- Windows 10 or 11 (64-bit)
+- [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) - [Python 3.11+](https://www.python.org/downloads/release/python-3110/)
+- [.NET Framework 4.8](https://dotnet.microsoft.com/download/dotnet-framework/net48)
+
+## For the User
+
+You can download the latest realese and start HiFiHub.exe.
+
+## Developer - Getting Started
+
+### 1. Extract the tools (Or you can download each listed tool on your own)
+
+Inside of `herramientas/` there are two compressed files:
 
 - `exe_tools.rar` -> ffmpeg.exe, ffprobe.exe, rsgain.exe, fpcalc.exe
-- `dlls.rar` -> libmpv-2.dll y las DLL de Visual C++
+- `dlls.rar` -> libmpv-2.dll and the Visual C++ DLLs
 
-**Descomprime ambos dentro de la propia carpeta `herramientas/`**, sin crear
-subcarpetas. El resultado debe quedar asi:
+**Extract both directly inside the `herramientas/` folder**, without creating subfolders. The final result should look like this:
 
     herramientas/
       ffmpeg.exe
@@ -35,39 +56,38 @@ subcarpetas. El resultado debe quedar asi:
       vcruntime140_1.dll
       presets/
 
-Estos binarios van comprimidos porque algunos superan el limite de 100 MB lo cual no me permite subirlos directamente a GitHub. 
-Son herramientas de terceros con sus propias licencias: ver `TERCEROS.md`.
+These binaries are compressed because some exceed the 100 MB limit, which prevents me from uploading them directly to GitHub.
+They are third-party tools with their own licenses: see THIRD-PARTY.md (TERCEROS.md).
 
-### 2. Instalar las dependencias
+### 2. Install dependencies
 
-Crea un entorno virtual con Python 3.11+ (VENV) e instala el proyecto en modo
-editable. Las dependencias estan declaradas en `pyproject.toml`.
+Create a virtual environment with Python 3.11+ (VENV) and install the project in editable mode. Dependencies are declared in `pyproject.toml`.
 
-Extras opcionales:
+Extras:
 
-- `studio` -> motor DSP offline (pedalboard por ejemplo)
+- `studio` -> offline DSP engine (pedalboard, for example)
 - `dev` -> pytest
 
-### 3. Ejecutar
+### 3. Run
 
     python app.py
 
-## Generar el ejecutable
+## Generate the executable
 
     pyinstaller hifihub.spec --noconfirm --clean
 
-El resultado queda en `dist/HiFiHub/`.
+The output will be located in `dist/HiFiHub/`.
 
-> **Importante:** el `.spec` copia la carpeta `herramientas/` completa. Si
-> construyes **sin haber descomprimido los .rar**, PyInstaller empaquetara los
-> propios .rar y el ejecutable fallara al no encontrar `ffmpeg.exe`.
+> **Important:** the `.spec` file copies the entire `herramientas/` folder. If you
+> build without having extracted the .rar files, PyInstaller will package
+> the .rar files themselves and the executable will fail because it won't find `ffmpeg.exe`.
 
-## Donde se guardan tus datos
+## Where your data is stored
 
-Biblioteca, ajustes y presets viven en `C:\Users\<usuario>\.hifihub`.
-Todo es guardado de forma local y el conteo de reproducciones, playlist creadas en "Para Ti", Etc. Se calcula de forma interna.
+Library, settings, and presets live in `C:\Users\<user>\.hifihub`.
+Everything is stored locally, and play counts, playlists created in "For You", etc., are calculated internally.
 
-## Licencia
+## License
 
-Hifi-Hub: **GPL v3** (ver `LICENSE.txt`).
-Herramientas de terceros: cada una conserva su licencia (ver `TERCEROS.md`).
+Hifi-Hub: **GPL v3** (see `LICENSE.txt`).
+Third-party tools: each retains its own license (see `TERCEROS.md`).
