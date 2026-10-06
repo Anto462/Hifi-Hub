@@ -28,7 +28,8 @@ Aplicación de escritorio para Windows. Todo funciona en local.
 ### Requisitos
 
 - Windows 10 u 11 (64 bits)
-- [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) - [Python 3.11+](https://www.python.org/downloads/release/python-3110/)
+- [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
+- [Python 3.11+](https://www.python.org/downloads/release/python-3110/)
 - [.NET Framework 4.8](https://dotnet.microsoft.com/download/dotnet-framework/net48)
 
 ## Para el usuario
