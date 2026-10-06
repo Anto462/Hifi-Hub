@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hifihub"
+version = "0.1.0"
+description = "Gestor y reproductor de bibliotecas musicales de alta fidelidad (yt-dlp + ffmpeg + libmpv)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "yt-dlp>=2026.1.1",
+    "typer>=0.12",
+    "rich>=13.0",
+    "tomli-w>=1.0",
+    "python-mpv>=1.0",
+    "pywebview>=6.0",
+    "mutagen>=1.47",
+    "requests>=2.31",
+    "pillow>=10.0",
+    "musicbrainzngs>=0.7.1",
+    "pyacoustid>=1.3",
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+# Motor DSP offline (Fase A3). Opcional: procesar copias con calidad de estudio,
+# hosting VST3 y mastering por referencia.
+studio = [
+    "pedalboard>=0.9",
+    "matchering>=2.0",
+]
+
+[project.scripts]
+hifihub = "hifihub.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["hifihub*"]
+
+[tool.setuptools.package-data]
+# La interfaz es HTML/CSS/JS servido desde el paquete, así que TODOS sus recursos
+# deben viajar con él. Las tipografías y los iconos son locales a propósito (la app
+# funciona sin conexión): si faltan aquí, un `pip install .` deja la interfaz sin
+# fuentes ni iconos. El .exe no lo notaba porque el .spec copia la carpeta entera.
+hifihub = [
+    "ui/web/*.html", "ui/web/*.css", "ui/web/*.js",
+    "ui/web/fonts/*.woff2",
+    "ui/web/icons/*.woff2", "ui/web/icons/*.css",
+    "data/autoeq/*.txt", "data/autoeq/*.md",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "network: tests que descargan contenido real de internet (lentos, requieren red)",
+]
+# -p no:faulthandler: crear/destruir varias instancias de libmpv en un mismo
+# proceso (solo ocurre en la suite de tests; la app usa una única instancia)
+# provoca una excepción estructurada benigna de Windows que faulthandler marcaría
+# como fatal al terminar. Los asserts se ejecutan igualmente.
+addopts = "-m 'not network' -p no:faulthandler"

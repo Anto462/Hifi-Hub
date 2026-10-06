@@ -1,0 +1,92 @@
+/* ============================================================================
+   HiFi Hub — Tokens (design system "Tanatos UI", tema Voltage)
+   Adaptado de colors_and_type.css de Tanatos: mismos tokens, pero con fuentes
+   LOCALES libres (app de escritorio offline) en vez de @import de Google.
+   Sustituciones de display (las FOT propietarias no se incluyen):
+     display heavy  -> Anton      (condensada de impacto)
+     rodin / kinetic-> Antonio    (condensada variable)
+     body           -> IBM Plex Sans
+     data / mono    -> IBM Plex Mono
+   ============================================================================ */
+
+/* ----- Cuerpo/datos: IBM Plex (Carbon), OFL, local ----- */
+@font-face { font-family:"IBM Plex Sans"; src:url("fonts/ibm-plex-sans-400.woff2") format("woff2"); font-weight:400; font-display:swap; }
+@font-face { font-family:"IBM Plex Sans"; src:url("fonts/ibm-plex-sans-600.woff2") format("woff2"); font-weight:600; font-display:swap; }
+@font-face { font-family:"IBM Plex Sans"; src:url("fonts/ibm-plex-sans-700.woff2") format("woff2"); font-weight:700; font-display:swap; }
+@font-face { font-family:"IBM Plex Mono"; src:url("fonts/ibm-plex-mono-400.woff2") format("woff2"); font-weight:400; font-display:swap; }
+@font-face { font-family:"IBM Plex Mono"; src:url("fonts/ibm-plex-mono-500.woff2") format("woff2"); font-weight:500; font-display:swap; }
+/* ----- Display/kinética: Anton + Antonio (Google, OFL), local ----- */
+@font-face { font-family:"Anton";   src:url("fonts/anton-400.woff2")   format("woff2"); font-weight:400; font-display:swap; }
+@font-face { font-family:"Antonio"; src:url("fonts/antonio-700.woff2") format("woff2"); font-weight:700; font-display:swap; }
+
+:root {
+  /* 1. Neutrales estructurales (Carbon gray + negro Atlus) */
+  --void:#000000; --ink-100:#0a0a0d; --ink-95:#101015; --ink-90:#161616;
+  --ink-80:#262626; --ink-70:#393939; --ink-60:#525252; --ash-50:#6f6f6f;
+  --ash-40:#8d8d8d; --ash-30:#c6c6c6; --ash-20:#e0e0e0; --ash-10:#f4f4f4; --white:#ffffff;
+  --text-primary:#f4f4f4; --text-secondary:#c6c6c6; --text-tertiary:#8d8d8d;
+  --text-disabled:#525252; --text-on-accent:#ffffff; --text-inverse:#161616;
+
+  /* 2. Voltage (azul eléctrico — acento primario) */
+  --voltage-70:#0043ce; --voltage-60:#0f62fe; --voltage-50:#2f6bff; --voltage-40:#4589ff;
+  --voltage-30:#78a9ff; --voltage-cyan:#00e5ff; --voltage-deep:#0a1f4d; --voltage-ink:#001141;
+
+  /* 3. Crimson (P5) — CTA agresivo / destructivo */
+  --crimson-70:#8a000b; --crimson-60:#e60012; --crimson-50:#ff1a2e; --crimson-40:#ff4d5e;
+
+  /* 4. Member accents (datos pareados) */
+  --hp-cyan:#38f4d4; --sp-magenta:#ff4fb8;
+
+  /* 5. Reverie (Metaphor) */
+  --ember-60:#e8612c; --ember-50:#f2793f; --teal-60:#2ba89e; --teal-40:#57c7bd;
+  --parchment:#ede3ce; --parchment-ink:#1c160d;
+
+  /* 6. Estado semántico (Carbon) */
+  --support-error:#fa4d56; --support-success:#42be65; --support-warning:#f1c21b; --support-info:#4589ff;
+
+  /* 7. Liquid Glass */
+  --glass-dark-bg:rgba(16,17,24,0.55); --glass-dark-strong:rgba(10,11,16,0.72);
+  --glass-light-bg:rgba(255,255,255,0.06); --glass-tint-volt:rgba(15,98,254,0.14);
+  --glass-tint-crim:rgba(230,0,18,0.12);
+  --glass-border:rgba(255,255,255,0.12); --glass-border-strong:rgba(255,255,255,0.24);
+  --glass-border-volt:rgba(69,137,255,0.55);
+  --glass-blur:saturate(150%) blur(24px); --glass-blur-heavy:saturate(160%) blur(40px);
+  --glass-inner:inset 0 1px 0 rgba(255,255,255,0.22), inset 0 0 0 1px rgba(255,255,255,0.05);
+
+  /* 8. Elevación / sombra / glow */
+  --shadow-01:0 2px 6px rgba(0,0,0,0.40); --shadow-02:0 4px 14px rgba(0,0,0,0.46);
+  --shadow-03:0 10px 28px rgba(0,0,0,0.52); --shadow-04:0 22px 60px rgba(0,0,0,0.60);
+  --shadow-glass:0 18px 48px rgba(0,0,0,0.55), var(--glass-inner);
+  --glow-volt:0 0 0 1px rgba(69,137,255,0.6), 0 0 24px rgba(15,98,254,0.45);
+  --glow-crim:0 0 0 1px rgba(255,26,46,0.6), 0 0 24px rgba(230,0,18,0.45);
+
+  /* 9. Espaciado (rejilla 8px) */
+  --space-01:2px; --space-02:4px; --space-03:8px; --space-04:12px; --space-05:16px;
+  --space-06:24px; --space-07:32px; --space-08:40px; --space-09:48px; --space-10:64px;
+  --space-11:80px; --space-12:96px; --grid-unit:8px;
+
+  /* 10. Radios */
+  --radius-none:0px; --radius-sm:2px; --radius-md:8px; --radius-lg:16px; --radius-xl:24px; --radius-pill:999px;
+
+  /* 11. Movimiento */
+  --ease-glass:cubic-bezier(0.22,1,0.36,1); --ease-snap:cubic-bezier(0.16,1,0.3,1);
+  --ease-exit:cubic-bezier(0.4,0,1,1);
+  --dur-fast:120ms; --dur-base:220ms; --dur-slow:420ms; --stagger:46ms;
+  --ease-violent-snap:cubic-bezier(0.17,0.89,0.32,1.49);
+  --skew-aggressive:-7deg; --skew-slash:-18deg;
+
+  /* 12. Tipografía */
+  --font-display:"Anton","Antonio",system-ui,sans-serif;
+  --font-rodin:"Antonio","Anton",system-ui,sans-serif;
+  --font-kinetic:"Antonio","Anton",sans-serif;
+  --font-sans:"IBM Plex Sans",system-ui,"Segoe UI",-apple-system,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,"SF Mono",monospace;
+
+  --fs-mega:clamp(72px,12vw,200px); --fs-giant:clamp(48px,8vw,120px);
+  --fs-h1:clamp(34px,4.5vw,56px); --fs-h2:28px; --fs-h3:20px;
+  --fs-body:16px; --fs-sm:14px; --fs-cap:12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-fast:0ms; --dur-base:0ms; --dur-slow:0ms; --stagger:0ms; }
+}

@@ -1,0 +1,1 @@
+Es importante descomprimir los .rar dlls y exe_tools en esta carpeta, todas estas herramientas deben estar dentro de la carpeta "herramientas" para que puedan ser correctamente invocadas por el aplicativo.

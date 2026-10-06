@@ -1,0 +1,48 @@
+# ===========================================================================
+#  HiFi Hub
+# ===========================================================================
+
+# --- Herramientas de terceros ---------------------------------------------
+herramientas/*
+!herramientas/*.rar
+!herramientas/Readme.txt
+!herramientas/presets/
+
+# --- Resultados de compilacion --------------------------------------------
+build/
+dist/
+
+# --- Python ----------------------------------------------------------------
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.pyd
+*.egg-info/
+.eggs/
+
+# --- Cachés de desarrollo --------------------------------------------------
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Tests (se mantienen en local, no se publican) -------------------------
+tests/
+
+# --- Datos locales ---------------------------------------------------------
+# La app guarda biblioteca y ajustes en ~/.hifihub, pero por si algo se
+# genera dentro del repo al ejecutarla desde aqui:
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.hifihub/
+
+# --- Editor y sistema operativo --------------------------------------------
+.vscode/
+Thumbs.db
+desktop.ini
+*~

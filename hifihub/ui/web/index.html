@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HiFi Hub</title>
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="icons/phosphor-bold.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="bd" aria-hidden="true">
+    <div class="bd__band"></div>
+    <div class="bd__dots"></div>
+    <div class="bd__ghost">HIFI</div>
+  </div>
+
+  <header>
+    <h1 id="wordmark" role="button" tabindex="0" title="Ir a Para ti">HiFi Hub</h1>
+    <nav>
+      <button class="tab active" data-view="parati"><i class="ph-bold ph-sparkle"></i>Para ti</button>
+      <button class="tab" data-view="biblioteca"><i class="ph-bold ph-vinyl-record"></i>Biblioteca</button>
+      <button class="tab" data-view="descargas"><i class="ph-bold ph-download-simple"></i>Descargas</button>
+      <button class="tab" data-view="importar"><i class="ph-bold ph-folder-plus"></i>Importar</button>
+      <button class="tab" data-view="reproduciendo"><i class="ph-bold ph-waveform"></i>Reproduciendo</button>
+      <button class="tab" data-view="estudio"><i class="ph-bold ph-sliders-horizontal"></i>Estudio</button>
+      <button class="tab" data-view="ajustes"><i class="ph-bold ph-gear-six"></i>Ajustes</button>
+    </nav>
+  </header>
+
+  <div id="update-banner" class="update-banner" hidden>
+    <span id="update-banner-text"></span>
+    <button id="btn-update-apply" class="primary">Actualizar</button>
+    <button id="btn-update-dismiss" class="secondary"><i class="ph-bold ph-x"></i></button>
+  </div>
+
+  <main>
+    <!-- ============ BIBLIOTECA ============ -->
+    <section id="view-biblioteca" class="view">
+      <div class="row inline">
+        <input id="search" type="text" placeholder="Buscar título, artista o álbum…">
+        <button id="btn-scan" class="secondary">Escanear</button>
+      </div>
+      <nav class="subtabs">
+        <button class="subtab active" data-sub="albums">Álbumes</button>
+        <button class="subtab" data-sub="artists">Artistas</button>
+        <button class="subtab" data-sub="songs">Canciones</button>
+        <button class="subtab" data-sub="playlists">Playlists</button>
+      </nav>
+      <!-- Orden y filtro-SOLO aplican a Álbumes y Canciones, así que #lib-controls
+           se oculta en Artistas y Playlists. Las estadísticas se mantienen siempre. -->
+      <div class="row inline lib-tools">
+        <div id="lib-controls" class="row inline">
+          <label class="hint inline-label">Orden
+            <select id="lib-sort">
+              <option value="artist">Artista</option>
+              <option value="title">Título</option>
+              <option value="year">Año</option>
+              <option value="added">Recién añadido</option>
+              <option value="plays">Más escuchado</option>
+              <option value="duration">Duración</option>
+            </select>
+          </label>
+          <label class="check" title="Solo pistas y álbumes sin pérdida (FLAC, ALAC, WAV)">
+            <input id="lib-lossless" type="checkbox"> Solo lossless
+          </label>
+        </div>
+        <span id="lib-stats" class="hint"></span>
+      </div>
+
+      <!-- Resultados de búsqueda-contenedor PROPIO, hermano de las subvistas.
+           Antes se inyectaban dentro de #albums (un grid) y el diseño se rompía. -->
+      <div id="search-results" class="panel" hidden></div>
+
+      <!-- Álbumes. Al abrir un álbum se oculta el grid y se muestra la página
+           dedicada #album-page (mismo patrón que la página de artista). -->
+      <div id="sub-albums" class="subview active">
+        <div class="row inline songs-tools" id="albums-tools">
+          <input id="albums-filter" type="text" placeholder="Filtrar álbumes (título o artista)…">
+          <label class="hint inline-label">Por página
+            <select id="grid-per-page">
+              <option value="15">15</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+            </select>
+          </label>
+        </div>
+        <div id="albums" class="grid"></div>
+        <div id="albums-pager" class="songs-pager" hidden>
+          <button id="albums-prev" class="secondary"><i class="ph-bold ph-caret-left"></i>Anterior</button>
+          <span id="albums-page-info" class="hint"></span>
+          <button id="albums-next" class="secondary">Siguiente<i class="ph-bold ph-caret-right"></i></button>
+        </div>
+        <div id="album-page" hidden>
+          <button id="btn-album-back" class="secondary album-back"><i class="ph-bold ph-arrow-left"></i>Álbumes</button>
+          <div class="album-head">
+            <div id="album-page-cover" class="album-cover-lg"></div>
+            <div class="album-head-info">
+              <div id="album-page-title" class="artist-title"></div>
+              <div id="album-page-artist" class="album-head-artist"></div>
+              <div id="album-page-meta" class="hint"></div>
+              <div class="row inline album-head-actions">
+                <button id="btn-play-album" class="primary"><i class="ph-bold ph-play"></i>Reproducir álbum</button>
+                <button id="btn-shuffle-album" class="secondary"><i class="ph-bold ph-shuffle"></i>Aleatorio</button>
+                <button id="btn-album-playlist" class="secondary"><i class="ph-bold ph-plus"></i>Añadir a playlist</button>
+                <button id="btn-del-album" class="danger"><i class="ph-bold ph-trash"></i>Eliminar álbum</button>
+              </div>
+            </div>
+          </div>
+          <div id="album-tracks" class="panel"></div>
+        </div>
+      </div>
+
+      <!-- Sub: Artistas -->
+      <div id="sub-artists" class="subview">
+        <div class="row inline songs-tools" id="artists-tools">
+          <input id="artists-filter" type="text" placeholder="Filtrar artistas…">
+          <label class="hint inline-label">Por página
+            <select id="grid-per-page-2">
+              <option value="15">15</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+            </select>
+          </label>
+        </div>
+        <div id="artists" class="grid"></div>
+        <div id="artists-pager" class="songs-pager" hidden>
+          <button id="artists-prev" class="secondary"><i class="ph-bold ph-caret-left"></i>Anterior</button>
+          <span id="artists-page-info" class="hint"></span>
+          <button id="artists-next" class="secondary">Siguiente<i class="ph-bold ph-caret-right"></i></button>
+        </div>
+        <div id="artist-page" hidden>
+          <div class="artist-head">
+            <button id="btn-artist-back" class="secondary"><i class="ph-bold ph-arrow-left"></i>Artistas</button>
+            <div>
+              <div id="artist-name" class="artist-title"></div>
+              <div id="artist-meta" class="hint"></div>
+            </div>
+            <div class="row inline">
+              <button id="btn-artist-play" class="primary"><i class="ph-bold ph-play"></i>Reproducir todo</button>
+              <button id="btn-artist-shuffle" class="secondary"><i class="ph-bold ph-shuffle"></i>Aleatorio</button>
+              <button id="btn-artist-playlist" class="secondary"><i class="ph-bold ph-plus"></i>Añadir a playlist</button>
+            </div>
+          </div>
+          <div id="artist-albums" class="grid"></div>
+          <div id="artist-tracks" class="panel"></div>
+        </div>
+      </div>
+
+      <!-- Canciones. Se pinta por trozos: con miles de pistas, generar todas
+           las filas de golpe congela la UI. #songs-more hace de centinela para
+           cargar el siguiente trozo al llegar al final. -->
+      <div id="sub-songs" class="subview">
+        <!-- Filtro LOCAL (no consulta al backend): acota la lista ya cargada al
+             instante. Distinto del buscador global de arriba, que reemplaza las
+             subvistas por un panel de resultados de toda la biblioteca. -->
+        <div class="row inline songs-tools">
+          <input id="songs-filter" type="text" placeholder="Filtrar canciones (título, artista o álbum)…">
+          <label class="hint inline-label">Por página
+            <select id="songs-per-page">
+              <option value="15">15</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+            </select>
+          </label>
+        </div>
+        <div id="songs-head" class="hint songs-head"></div>
+        <div id="songs" class="panel"></div>
+        <div id="songs-pager" class="songs-pager" hidden>
+          <button id="songs-prev" class="secondary"><i class="ph-bold ph-caret-left"></i>Anterior</button>
+          <span id="songs-page-info" class="hint"></span>
+          <button id="songs-next" class="secondary">Siguiente<i class="ph-bold ph-caret-right"></i></button>
+        </div>
+      </div>
+
+      <!-- Sub: Playlists -->
+      <div id="sub-playlists" class="subview">
+        <div class="row inline">
+          <input id="pl-new-name" type="text" placeholder="Nombre de la nueva playlist…">
+          <button id="btn-pl-create" class="secondary">Crear</button>
+          <button id="btn-pl-import" class="secondary">Importar M3U8…</button>
+        </div>
+        <div id="playlists" class="panel"></div>
+        <div id="playlist-detail" hidden>
+          <div class="artist-head">
+            <button id="btn-pl-back" class="secondary"><i class="ph-bold ph-arrow-left"></i>Playlists</button>
+            <div>
+              <div id="pl-name" class="artist-title"></div>
+              <div id="pl-meta" class="hint"></div>
+            </div>
+            <div class="row inline">
+              <button id="btn-pl-play" class="primary"><i class="ph-bold ph-play"></i>Reproducir</button>
+              <button id="btn-pl-rename" class="secondary">Renombrar</button>
+              <button id="btn-pl-export" class="secondary">Exportar</button>
+              <button id="btn-pl-delete" class="secondary">Eliminar</button>
+            </div>
+          </div>
+          <div class="row inline" id="pl-rename-row" hidden>
+            <input id="pl-rename-input" type="text">
+            <button id="btn-pl-rename-ok" class="primary">Guardar</button>
+          </div>
+          <div id="pl-tracks" class="panel"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ PARA TI ============ -->
+    <section id="view-parati" class="view active">
+      <div class="fy-hero">
+        <div class="fy-hero-bg" id="fy-hero-num"></div>
+        <div class="fy-hero-in">
+          <div class="fy-kicker">Hifi Hub</div>
+          <h2 class="fy-title">Para ti</h2>
+          <div id="fy-stats" class="fy-stats"></div>
+        </div>
+      </div>
+      <!-- Tiras de "continuar donde lo dejaste". Cada una tiene su propia FORMA
+           (retratos circulares / estantería inclinada) para que la pantalla no sea
+           una lista monótona de tarjetas iguales. -->
+      <section id="fy-strip-artists" class="fy-strip" hidden>
+        <h3 class="fy-sec"><span>Sigue escuchando</span></h3>
+        <div class="fy-rail fy-rail-artists"></div>
+      </section>
+
+      <section id="fy-strip-albums" class="fy-strip" hidden>
+        <h3 class="fy-sec"><span>Vuelve al disco</span></h3>
+        <div class="fy-rail fy-rail-shelf"></div>
+      </section>
+
+      <section id="fy-strip-added" class="fy-strip fy-strip-crim" hidden>
+        <h3 class="fy-sec"><span>Recién añadido</span></h3>
+        <div class="fy-rail fy-rail-shelf"></div>
+      </section>
+
+      <h3 id="fy-mixes-title" class="fy-sec" hidden><span>Tus mezclas</span></h3>
+      <div id="fy-grid" class="fy-grid"></div>
+      <div id="fy-empty" class="empty-state" hidden>
+        <i class="ph-bold ph-sparkle"></i>
+        <h4>Comienza la experiencia HiFi</h4>
+        <p>Comienza la experiencia HIFI añadiendo tu música:</p>
+        <div class="actions">
+          <button class="primary" data-go="importar"><i class="ph-bold ph-folder-plus"></i>Importar música</button>
+          <button class="secondary" data-go="descargas"><i class="ph-bold ph-download-simple"></i>Descargar</button>
+        </div>
+        <p class="fy-empty-note">Las mezclas se construyen solas a partir de lo que escuchas,
+          sin enviar nada fuera de tu equipo.</p>
+      </div>
+    </section>
+
+    <!-- Menú flotante "Añadir a playlist" -->
+    <div id="plmenu" class="plmenu" hidden></div>
+    <!-- Menú contextual por pista (⋯) -->
+    <div id="ctxmenu" class="plmenu" hidden></div>
+
+    <!-- Modal de edición de metadatos -->
+    <div id="edit-modal" class="modal" hidden>
+      <div class="modal-box">
+        <div class="modal-title">Editar información</div>
+        <div class="field"><label>Título</label><input id="ed-title" type="text"></div>
+        <div class="row">
+          <div class="field"><label>Artista</label><input id="ed-artist" type="text"></div>
+          <div class="field"><label>Artista del álbum</label><input id="ed-album_artist" type="text"></div>
+        </div>
+        <div class="field"><label>Álbum</label><input id="ed-album" type="text"></div>
+        <div class="row">
+          <div class="field"><label>Nº de pista</label><input id="ed-track_number" type="number" min="0"></div>
+          <div class="field"><label>Año</label><input id="ed-date" type="text" placeholder="2013"></div>
+          <div class="field"><label>Género</label><input id="ed-genre" type="text"></div>
+        </div>
+        <small class="hint">Los cambios se escriben en el archivo (los verá cualquier reproductor). Un campo vacío no se modifica.</small>
+        <div class="actions">
+          <button id="btn-edit-save" class="primary">Guardar</button>
+          <button id="btn-edit-cancel" class="secondary">Cancelar</button>
+          <span id="edit-status" class="hint"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal de texto (nombrar presets, etc.) -->
+    <div id="prompt-modal" class="modal" hidden>
+      <div class="modal-box">
+        <div class="modal-title" id="prompt-title">—</div>
+        <p id="prompt-msg" class="hint"></p>
+        <div class="field"><input id="prompt-input" type="text"></div>
+        <div class="actions">
+          <button id="btn-prompt-ok" class="primary">Guardar</button>
+          <button id="btn-prompt-cancel" class="secondary">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal de confirmación (borrado) -->
+    <div id="confirm-modal" class="modal" hidden>
+      <div class="modal-box">
+        <div class="modal-title" id="confirm-title">¿Confirmar?</div>
+        <p id="confirm-msg" class="hint"></p>
+        <div class="actions">
+          <button id="btn-confirm-ok" class="danger">Eliminar</button>
+          <button id="btn-confirm-cancel" class="secondary">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ REPRODUCIENDO ============ -->
+    <section id="view-reproduciendo" class="view">
+      <div class="np">
+        <img id="np-cover" class="np-cover" alt="">
+        <div id="np-title" class="np-title">—</div>
+        <div id="np-artist" class="np-meta"></div>
+        <div id="np-album" class="np-meta"></div>
+        <div class="np-progress">
+          <span id="np-cur">0:00</span>
+          <input id="np-seek" type="range" min="0" max="100" value="0">
+          <span id="np-dur">0:00</span>
+        </div>
+        <!-- Controles con la pista anterior y la siguiente a los costados. -->
+        <div class="np-nav">
+          <button id="np-prev-label" class="np-nb prev" hidden>
+            <span class="nb-tag"><i class="ph-bold ph-caret-left"></i>Anterior</span>
+            <span class="nb-title"></span>
+          </button>
+          <div class="np-controls">
+            <button id="np-shuffle" class="secondary" title="Aleatorio"><i class="ph-bold ph-shuffle"></i></button>
+            <button id="np-prev" class="secondary"><i class="ph-bold ph-skip-back"></i></button>
+            <button id="np-play" class="primary"><i class="ph-bold ph-play"></i></button>
+            <button id="np-next" class="secondary"><i class="ph-bold ph-skip-forward"></i></button>
+            <button id="np-repeat" class="secondary" title="Repetir"><i class="ph-bold ph-repeat"></i></button>
+          </div>
+          <button id="np-next-label" class="np-nb next" hidden>
+            <span class="nb-tag">Siguiente<i class="ph-bold ph-caret-right"></i></span>
+            <span class="nb-title"></span>
+          </button>
+        </div>
+        <div class="np-progress">
+          <span class="hint">Vol</span>
+          <input id="np-volume" type="range" min="0" max="100" value="100">
+        </div>
+
+        <div class="np-level">
+          <label class="hint">Nivelación
+            <select id="rg-mode">
+              <option value="track">Por pista</option>
+              <option value="album">Por álbum</option>
+              <option value="off">Desactivada</option>
+            </select>
+          </label>
+          <label class="hint">Preamp <span id="rg-preamp-val">+3 dB</span>
+            <input id="rg-preamp" type="range" min="0" max="12" step="0.5" value="3">
+          </label>
+        </div>
+
+        <div id="np-specs" class="hint"></div>
+
+        <div id="signal-path" class="panel sp"></div>
+
+        <div class="actions center">
+          <button id="btn-queue-inline" class="secondary"><i class="ph-bold ph-list-numbers"></i>Cola</button>
+          <button id="btn-lyrics" class="secondary">Letras</button>
+          <button id="btn-spectrum" class="secondary">Espectro</button>
+          <button id="btn-eq" class="secondary">EQ</button>
+          <button id="btn-hp" class="secondary">Auriculares</button>
+          <button id="btn-conv" class="secondary">Convolución</button>
+        </div>
+
+        <!-- Cola integrada en el flujo del reproductor-mismo estilo
+             que los paneles Letras/Espectro/EQ. -->
+        <div id="queue-inline" class="panel qinline" hidden>
+          <div class="row inline qpanel-head">
+            <strong>Cola</strong>
+            <span id="qi-count" class="hint"></span>
+          </div>
+          <div id="qi-list" class="qpanel-list"></div>
+        </div>
+
+        <div id="hp-panel" class="panel" hidden>
+          <div class="field">
+            <label for="hp-select">Corrección de auriculares (AutoEq)</label>
+            <div class="row inline">
+              <select id="hp-select"><option value="">Ninguna (sin corregir)</option></select>
+              <button id="btn-hp-import" class="secondary">Importar…</button>
+            </div>
+            <small class="hint">Corrige la respuesta real del auricular. ¿No está el tuyo? Expórtalo de autoeq.app e impórtalo. Usa la opcion de "EqualizerAPO ParametricEq".</small>
+          </div>
+          <div class="field">
+            <label for="hp-crossfeed">Crossfeed <span id="hp-crossfeed-val">off</span></label>
+            <input id="hp-crossfeed" type="range" min="0" max="100" value="0">
+            <small class="hint">Reduce la fatiga de las mezclas de estéreo extremo (simula escucha en sala).</small>
+          </div>
+        </div>
+
+        <div id="lyrics-panel" class="panel lyrics" hidden></div>
+        <div id="spectrum-panel" class="panel" hidden></div>
+
+        <div id="eq-panel" class="panel" hidden>
+          <label class="check">
+            <input id="eq-enabled" type="checkbox">
+            Activar EQ (deja de ser bit-perfect)
+          </label>
+          <!-- Curva resultante del EQ, dibujada sobre las bandas. -->
+          <canvas id="eq-curve" class="eq-curve" width="720" height="120"></canvas>
+          <div id="eq-sliders" class="eq-sliders"></div>
+          <div id="eq-preamp-note" class="hint eq-note"></div>
+          <div id="eq-why" class="hint eq-why"></div>
+          <div class="actions eq-actions">
+            <button id="eq-reset" class="secondary">Plano</button>
+            <button id="eq-reset-freqs" class="secondary" title="Volver a las frecuencias ISO">Frecuencias ISO</button>
+            <select id="eq-preset-select" title="Presets guardados">
+              <option value="">Presets…</option>
+            </select>
+            <button id="eq-preset-save" class="secondary">Guardar…</button>
+            <button id="eq-preset-del" class="secondary" title="Borrar el preset seleccionado">Borrar</button>
+          </div>
+          <small class="hint">Cada banda tiene su <strong>frecuencia central editable</strong> (el número bajo el
+            deslizador). Mantén pulsado <strong>«solo»</strong> para escuchar una banda aislada y afinarla de oído.
+            Al subir ganancia se aplica un <strong>preamp automático</strong> para que nunca recorte.</small>
+        </div>
+
+        <!-- Convolución por respuesta al impulso: corrección de sala / auriculares -->
+        <div id="conv-panel" class="panel" hidden>
+          <div class="field">
+            <label for="conv-select">Convolución (respuesta al impulso)</label>
+            <div class="row inline">
+              <select id="conv-select"><option value="">Ninguna (sin convolución)</option></select>
+              <button id="btn-conv-import" class="secondary">Importar IR…</button>
+              <button id="btn-conv-del" class="secondary">Borrar</button>
+            </div>
+            <small class="hint">La corrección más fiel posible: aplica la respuesta <em>medida</em> de tu sala o
+              auriculares en vez de aproximarla con filtros. Mide tu sala con un micrófono de medición y <strong>REW (roomeqwizard.com)</strong> y exporta el
+              impulso del filtro de corrección (la respuesta inversa), a .wav. La ganancia se normaliza automáticamente para que no recorte.</small>
+          </div>
+          <div id="conv-info" class="hint"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ DESCARGAS ============ -->
+    <section id="view-descargas" class="view">
+      <div class="field">
+        <label for="url">Enlace o búsqueda</label>
+        <input id="url" type="text" placeholder="https://…  ·  o el nombre de una canción">
+        <small class="hint">Acepta YouTube, archive.org (un ítem = concierto/álbum completo), Spotify (solo como catálogo) o texto libre para buscar.</small>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="profile">Perfil</label>
+          <select id="profile"></select>
+          <small id="profile-desc" class="hint"></small>
+        </div>
+        <div class="field">
+          <label for="template">Organización</label>
+          <select id="template"></select>
+        </div>
+      </div>
+
+      <div class="row" id="resample-row" hidden>
+        <div class="field">
+          <label for="sample-rate">Sample rate (Hz)</label>
+          <select id="sample-rate">
+            <option value="">Conservar origen</option>
+            <option value="44100">44100 (CD)</option>
+            <option value="48000">48000</option>
+            <option value="88200">88200</option>
+            <option value="96000">96000</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="bit-depth">Profundidad</label>
+          <select id="bit-depth">
+            <option value="">Conservar origen</option>
+            <option value="16">16-bit (+ dither)</option>
+            <option value="24">24-bit</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="dir">Carpeta destino</label>
+        <div class="row inline">
+          <input id="dir" type="text" placeholder="(configuración por defecto)">
+          <button id="btn-folder" class="secondary">Elegir…</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="sections">Cortes (opcional) — ej. 1:23:00-1:27:30, separa varios con comas</label>
+        <input id="sections" type="text" placeholder="dejar vacío para descargar completo">
+      </div>
+
+      <div class="field">
+        <label>Fuentes de descarga</label>
+        <div class="row inline">
+          <label class="check">
+            <input id="src-youtube" type="checkbox" checked>
+            <i class="ph-bold ph-youtube-logo"></i> YouTube
+          </label>
+          <label class="check">
+            <input id="src-archive" type="checkbox">
+            <i class="ph-bold ph-buildings"></i> archive.org (FLAC lossless)
+          </label>
+        </div>
+        <small id="src-hint" class="hint"></small>
+      </div>
+
+      <label class="check">
+        <input id="multi-source" type="checkbox">
+        Buscar mejor origen (compara la misma canción en otras fuentes)
+      </label>
+      <label class="check">
+        <input id="enrich" type="checkbox" checked>
+        Biblioteca Enriquecida (limpiar títulos, portada y metadatos)
+      </label>
+      <label class="check">
+        <input id="exact-cuts" type="checkbox">
+        Cortes exactos al segundo (Corta en keyframes, sin pérdida)
+      </label>
+      <label class="check">
+        <input id="split-chapters" type="checkbox">
+        Dividir por capítulos del video (Sets con tracklist)
+      </label>
+      <label class="check">
+        <input id="sponsorblock" type="checkbox">
+        SponsorBlock: cortar tramos no musicales
+      </label>
+
+      <div class="actions">
+        <button id="btn-download" class="primary">Descargar</button>
+        <button id="btn-preview" class="secondary">Previsualizar</button>
+        <button id="btn-batch" class="secondary" title="Procesar un .txt con un enlace por línea">Lote (.txt)…</button>
+      </div>
+
+      <div id="preview" class="panel" hidden></div>
+      <div id="jobs" class="panel"></div>
+    </section>
+
+    <!-- ============ IMPORTAR ============ -->
+    <section id="view-importar" class="view">
+      <div class="subtitle">Importar tu música</div>
+      <p class="hint">Añade FLAC, rips de CD o compras a tu biblioteca — se organizan, etiquetan
+        (identificación por huella acústica), reciben portada y ReplayGain, igual que las descargas.</p>
+
+      <div class="actions">
+        <button id="btn-imp-files" class="secondary"><i class="ph-bold ph-file-audio"></i>Elegir archivos…</button>
+        <button id="btn-imp-folder" class="secondary"><i class="ph-bold ph-folder"></i>Elegir carpeta…</button>
+      </div>
+      <div id="imp-selection" class="hint">Nada seleccionado.</div>
+
+      <div class="field">
+        <label for="imp-dest">Carpeta destino</label>
+        <div class="row inline">
+          <input id="imp-dest" type="text" placeholder="(carpeta de la biblioteca por defecto)">
+          <button id="btn-imp-dest" class="secondary">Elegir…</button>
+        </div>
+      </div>
+
+      <label class="check"><input id="imp-enrich" type="checkbox" checked>Enriquecer (identificar, portada, letras)</label>
+      <label class="check"><input id="imp-replaygain" type="checkbox" checked>Volumen uniforme (tags ReplayGain)</label>
+      <label class="check"><input id="imp-convert" type="checkbox">Convertir a FLAC (por defecto conserva el formato original)</label>
+      <label class="check"><input id="imp-move" type="checkbox">Mover en vez de copiar (borra los archivos de origen)</label>
+
+      <div class="actions">
+        <button id="btn-imp-start" class="primary"><i class="ph-bold ph-folder-plus"></i>Importar</button>
+      </div>
+      <div id="imp-jobs" class="panel"></div>
+    </section>
+
+    <!-- ============ ESTUDIO ============ -->
+    <section id="view-estudio" class="view">
+      <div id="studio-status" class="hint"></div>
+      <p class="hint">Procesado de calidad de estudio. Genera <strong>copias</strong> — el original nunca se modifica.</p>
+
+      <div class="field">
+        <label for="studio-preset">Cadena de efectos</label>
+        <select id="studio-preset"></select>
+        <small id="studio-preset-desc" class="hint"></small>
+      </div>
+
+      <div id="studio-chain" class="panel"></div>
+
+      <div class="actions">
+        <button id="btn-studio-preview" class="secondary">Vista previa A/B (pista actual)</button>
+      </div>
+      <div id="studio-ab" class="panel" hidden></div>
+
+      <div class="field">
+        <label>Aplicar a</label>
+        <div class="row inline">
+          <button id="btn-studio-track" class="primary">Pista actual</button>
+          <button id="btn-studio-album" class="primary">Álbum actual</button>
+        </div>
+      </div>
+      <div id="studio-jobs" class="panel"></div>
+    </section>
+
+    <!-- ============ AJUSTES ============ -->
+    <section id="view-ajustes" class="view">
+      <div class="field">
+        <label for="cfg-dir">Carpeta de descargas por defecto</label>
+        <div class="row inline">
+          <input id="cfg-dir" type="text">
+          <button id="btn-cfg-folder" class="secondary">Elegir…</button>
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label for="cfg-profile">Perfil por defecto</label>
+          <select id="cfg-profile"></select>
+        </div>
+        <div class="field">
+          <label for="cfg-concurrency">Descargas simultáneas (lote)</label>
+          <input id="cfg-concurrency" type="number" min="1" max="8">
+        </div>
+      </div>
+      <div class="field">
+        <label for="cfg-pacing">Pausa entre descargas (segundos)</label>
+        <input id="cfg-pacing" type="number" min="0" max="60" step="1">
+        <small class="hint">En álbumes/lotes, una pausa de unos segundos entre pistas reduce que YouTube
+          te marque como bot. 0 = sin pausa (más rápido). Prueba 30–60 si te bloquean tras varias descargas.</small>
+      </div>
+      <div class="field">
+        <label for="cfg-device">Dispositivo de salida de audio</label>
+        <select id="cfg-device"><option value="auto">auto (default del sistema)</option></select>
+      </div>
+      <label class="check">
+        <input id="cfg-enrich" type="checkbox">
+        Activar Biblioteca Enriquecida por defecto
+      </label>
+      <label class="check">
+        <input id="cfg-exclusive" type="checkbox">
+        WASAPI exclusivo (Toma el dispositivo de audio en exclusiva)
+      </label>
+      <!-- Ajustes que SOLO tienen efecto en modo exclusivo: Aparecen con esa casilla. -->
+      <div id="wasapi-opts" class="wasapi-opts" hidden>
+        <label class="check">
+          <input id="cfg-keepalive" type="checkbox" checked>
+          Mantener el DAC activo entre pistas (evita el «clic» del relé)
+        </label>
+        <div class="field">
+          <label for="cfg-waitopen">Espera tras abrir el dispositivo (segundos)</label>
+          <input id="cfg-waitopen" type="number" min="0" max="5" step="0.1">
+          <small class="hint">Da tiempo al DAC a sincronizar su reloj antes de sonar; evita que se
+            coman los primeros milisegundos de la pista. 0.3 s va bien para casi todo.</small>
+        </div>
+        <label class="check">
+          <input id="cfg-limiter" type="checkbox">
+          Limitador de picos al final de la cadena DSP (opcional)
+        </label>
+        <small class="hint">El EQ ya aplica un <strong>preamp automático</strong> que evita el recorte de forma
+          transparente. Este limitador es solo una red de seguridad extra: altera los picos, así que
+          déjalo apagado si buscas máxima fidelidad.</small>
+        <details class="adv">
+          <summary>¿Por qué no hay ASIO?</summary>
+          <small class="hint">
+            Se analizó y se descartó con motivo. <strong>Para reproducción, WASAPI exclusivo ya entrega el
+            stream intacto</strong> con el reloj del DAC: ASIO no añade fidelidad audible ahí — su ventaja
+            real es la baja latencia al <em>monitorizar</em> mientras grabas, que no es nuestro caso.
+            Además, el motor de audio que usa HiFi Hub (libmpv) no incluye salida ASIO, y el SDK de
+            Steinberg no se puede redistribuir, así que habría que mantener un segundo motor entero
+            —perdiendo el gapless, el ReplayGain y toda la cadena DSP—. Y ASIO4ALL o FlexASIO, por
+            debajo, acaban usando WASAPI igualmente. Preferimos una opción menos que una opción vacía.
+          </small>
+        </details>
+      </div>
+      <label class="check">
+        <input id="cfg-listening" type="checkbox">
+        Modo Escucha: dar preferencia de CPU al audio mientras suena música
+      </label>
+      <small class="hint">Las tareas pesadas (análisis, espectros, lotes, importaciones) siguen
+        avanzando, pero ceden el turno al reproductor. Solo se nota bajo carga: en reposo el motor
+        ya consume prácticamente nada.</small>
+      <label class="check">
+        <input id="cfg-gain" type="checkbox">
+        Volumen Uniforme: tags ReplayGain tras descargar (EBU R128, sin recodificar)
+      </label>
+      <label class="check">
+        <input id="cfg-bpm" type="checkbox">
+        Analizar BPM y tonalidad al descargar (lento)
+      </label>
+      <div class="field">
+        <label for="cfg-acoustid">Clave AcoustID (opcional)</label>
+        <input id="cfg-acoustid" type="text" placeholder="acoustid.org/new-application">
+      </div>
+
+      <details class="adv">
+        <summary>Spotify como catálogo (opcional)</summary>
+        <small class="hint">
+          HiFi Hub <strong>no descarga audio de Spotify</strong>: Lee un enlace de Spotify para saber
+          <em>qué</em> canciones son y bajar el audio de YouTube/archive.org con el
+          postprocesado normal. Con tus credenciales (gratis en
+          developer.spotify.com) funcionan también álbumes y playlists.
+        </small>
+        <div class="row">
+          <div class="field">
+            <label for="cfg-sp-id">Client ID</label>
+            <input id="cfg-sp-id" type="text" placeholder="(vacío = solo pistas sueltas)">
+          </div>
+          <div class="field">
+            <label for="cfg-sp-secret">Client Secret</label>
+            <input id="cfg-sp-secret" type="password" placeholder="">
+          </div>
+        </div>
+      </details>
+
+      <div class="actions">
+        <button id="btn-save-cfg" class="primary">Guardar</button>
+        <span id="cfg-status" class="hint"></span>
+      </div>
+
+      <hr class="sep">
+      <h3 class="subtitle">Actualizaciones</h3>
+      <div id="upd-info" class="hint">—</div>
+      <div class="field">
+        <label for="cfg-channel">Canal del motor de descargas</label>
+        <select id="cfg-channel">
+          <option value="stable">Estable (recomendado)</option>
+          <option value="nightly">Nightly (arreglos recientes de YouTube)</option>
+        </select>
+        <small class="hint">Si YouTube empieza a dar errores (403 «Forbidden», «formato no disponible»),
+          cambia a <strong>Nightly</strong>: trae los arreglos antes que la versión estable, a cambio de ser
+          algo menos estable. Puedes volver a Estable cuando quieras.</small>
+      </div>
+      <label class="check">
+        <input id="cfg-autoupd" type="checkbox" checked>
+        Avisar al arrancar si hay una versión nueva del motor de descargas
+      </label>
+      <div class="actions">
+        <button id="btn-upd-check" class="secondary">Buscar actualizaciones</button>
+        <button id="btn-upd-apply" class="primary" hidden>Actualizar motor</button>
+        <span id="upd-status" class="hint"></span>
+      </div>
+    </section>
+  </main>
+
+  <!-- Panel de Cola-lo que viene después. Se abre desde la barra global o con Q. -->
+  <div id="queue-panel" class="qpanel" hidden>
+    <div class="row inline qpanel-head">
+      <strong>Cola</strong>
+      <span id="q-count" class="hint"></span>
+      <button id="btn-q-close" class="secondary">Cerrar</button>
+    </div>
+    <div id="q-list" class="qpanel-list"></div>
+  </div>
+
+  <!-- Barra de reproducción global-visible en TODAS las vistas mientras suena
+       algo. Se alimenta de los mismos eventos que la vista Reproduciendo. -->
+  <div id="miniplayer" class="mini" hidden>
+    <div id="mini-bar" class="mini-bar" title="Clic para saltar a un punto">
+      <div id="mini-fill" class="mini-fill"></div>
+    </div>
+    <div class="mini-body">
+      <img id="mini-cover" class="mini-cover" alt="">
+      <button id="mini-meta" class="mini-meta" title="Ir a Reproduciendo">
+        <span id="mini-title" class="mini-title">—</span>
+        <span id="mini-artist" class="mini-artist"></span>
+      </button>
+      <div class="mini-controls">
+        <button id="mini-prev" class="mini-btn" title="Anterior"><i class="ph-bold ph-skip-back"></i></button>
+        <button id="mini-play" class="mini-btn play" title="Reproducir / Pausa"><i class="ph-bold ph-play"></i></button>
+        <button id="mini-next" class="mini-btn" title="Siguiente"><i class="ph-bold ph-skip-forward"></i></button>
+        <button id="mini-queue" class="mini-btn" title="Cola (Q)"><i class="ph-bold ph-list-numbers"></i></button>
+      </div>
+      <div class="mini-time"><span id="mini-cur">0:00</span> / <span id="mini-dur">0:00</span></div>
+      <div class="mini-vol">
+        <i class="ph-bold ph-speaker-high"></i>
+        <input id="mini-volume" type="range" min="0" max="100" value="100" title="Volumen">
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
