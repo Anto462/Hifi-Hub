@@ -7,15 +7,28 @@ Aplicación de escritorio para Windows. Todo funciona en local.
 
 [English](README.md) · **Español**
 
-![HiFi Hub](.)
+<img width="800" alt="image" src="https://github.com/user-attachments/assets/7cc36b7b-17aa-4829-8085-950d6555a03f" />
 
 <details>
 <summary>Más capturas</summary>
 
-![Biblioteca](.)
-![Reproduciendo](.)
-![Playlist](.)
-![Importar](.)
+<p align="center">
+  <a href="https://github.com/user-attachments/assets/b8368dfc-0db1-4147-90b6-10ab1c256b08">
+    <img src="https://github.com/user-attachments/assets/b8368dfc-0db1-4147-90b6-10ab1c256b08" width="200" alt="Library view" />
+  </a>
+  &nbsp;&nbsp;
+  <a href="https://github.com/user-attachments/assets/227fb4c9-263d-4ad0-9ca0-affe46b4ae2b">
+    <img src="https://github.com/user-attachments/assets/227fb4c9-263d-4ad0-9ca0-affe46b4ae2b" width="200" alt="Now playing" />
+  </a>
+  &nbsp;&nbsp;
+  <a href="https://github.com/user-attachments/assets/60e8d6f4-6916-44c9-9836-d100353bc440">
+    <img src="https://github.com/user-attachments/assets/60e8d6f4-6916-44c9-9836-d100353bc440" width="200" alt="Playlist" />
+  </a>
+  &nbsp;&nbsp;
+  <a href="https://github.com/user-attachments/assets/a5bc8bb0-5f78-4b76-9bfc-ee688c8b11db">
+    <img src="https://github.com/user-attachments/assets/a5bc8bb0-5f78-4b76-9bfc-ee688c8b11db" width="200" alt="Import" />
+  </a>
+</p>
 
 </details>
 
