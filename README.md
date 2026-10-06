@@ -6,7 +6,7 @@ Windows desktop app. Everything runs locally.
 
 **English** · [Español](README.es.md)
 
-![HiFi Hub](.)
+<img width="800" alt="image" src="https://github.com/user-attachments/assets/7cc36b7b-17aa-4829-8085-950d6555a03f" />
 
 <details>
 <summary>More screenshots</summary>
