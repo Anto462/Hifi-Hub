@@ -7,22 +7,22 @@ Aplicación de escritorio para Windows. Todo funciona en local.
 
 [English](README.md) · **Español**
 
-<img width="800" alt="image" src="https://github.com/user-attachments/assets/7cc36b7b-17aa-4829-8085-950d6555a03f" />
+<img width="800" alt="image" src="https://github.com/user-attachments/assets/9cb64bb4-b2ca-4a63-9277-b8c7a76a1059" />
 
 <details>
 <summary>Más capturas</summary>
 
 <p align="center">
-  <a href="https://github.com/user-attachments/assets/b8368dfc-0db1-4147-90b6-10ab1c256b08">
-    <img src="https://github.com/user-attachments/assets/b8368dfc-0db1-4147-90b6-10ab1c256b08" width="200" alt="Library view" />
+  <a href="https://github.com/user-attachments/assets/2b94d8ff-5c7c-4830-8928-818a68281fb4">
+    <img src="https://github.com/user-attachments/assets/2b94d8ff-5c7c-4830-8928-818a68281fb4" width="200" alt="Library view" />
   </a>
   &nbsp;&nbsp;
-  <a href="https://github.com/user-attachments/assets/227fb4c9-263d-4ad0-9ca0-affe46b4ae2b">
-    <img src="https://github.com/user-attachments/assets/227fb4c9-263d-4ad0-9ca0-affe46b4ae2b" width="200" alt="Now playing" />
+  <a href="https://github.com/user-attachments/assets/d2f71636-947f-4f61-a293-e2e184ebfe53">
+    <img src="https://github.com/user-attachments/assets/d2f71636-947f-4f61-a293-e2e184ebfe53" width="200" alt="Now playing" />
   </a>
   &nbsp;&nbsp;
-  <a href="https://github.com/user-attachments/assets/60e8d6f4-6916-44c9-9836-d100353bc440">
-    <img src="https://github.com/user-attachments/assets/60e8d6f4-6916-44c9-9836-d100353bc440" width="200" alt="Playlist" />
+  <a href="https://github.com/user-attachments/assets/09c1186f-fbb9-4db3-953a-9da37cd52802">
+    <img src="https://github.com/user-attachments/assets/09c1186f-fbb9-4db3-953a-9da37cd52802" width="200" alt="Playlist" />
   </a>
   &nbsp;&nbsp;
   <a href="https://github.com/user-attachments/assets/a5bc8bb0-5f78-4b76-9bfc-ee688c8b11db">
