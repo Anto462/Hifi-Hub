@@ -36,7 +36,7 @@ Aplicación de escritorio para Windows. Todo funciona en local.
 
 ## Descarga
 
-**[Descargar la última versión](https://github.com/Anto462/Hifi-Hub/releases/tag/Stable)**
+**[Descargar la última versión](https://github.com/Anto462/Hifi-Hub/releases/tag/v1.1.0)**
 
 ### Requisitos
 
