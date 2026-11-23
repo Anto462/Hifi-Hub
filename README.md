@@ -35,7 +35,7 @@ Windows desktop app. Everything runs locally.
 
 ## Download
 
-**[Download the latest release](https://github.com/Anto462/Hifi-Hub/releases/tag/Stable)**
+**[Download the latest release](https://github.com/Anto462/Hifi-Hub/releases/tag/v1.1.0)**
 
 ### Requirements
 
