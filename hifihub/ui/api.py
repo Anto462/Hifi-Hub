@@ -1,8 +1,8 @@
 """Puente js_api, El frontend los invoca como window.pywebview.api.*.
 
-- Los métodos son finos: validan, delegan en el núcleo (hifihub.*) y devuelven
+- Los métodos validan, delegan en el núcleo (hifihub.*) y devuelven
   datos JSON-serializables.
-- Hilo del WebView: las descargas (yt-dlp es bloqueante) corren en un hilo aparte y reportan avance por el EventBus.
+- En WebView: las descargas corren en un hilo aparte y reportan avance por el EventBus.
 - La UI nunca importa lógica.
 """
 
@@ -29,6 +29,10 @@ class Api:
         self._lib: Any = None
         self._controller: Any = None
         self._pl: Any = None
+        self._lastfm_token: str | None = None   # token pendiente de autorizar
+        # Sesión de reproducción persistente (ver player/session_state.py).
+        self._pos = 0.0          # último segundo conocido de la pista en curso
+        self._saved_at = 0.0     # monotonic del último guardado periódico
 
     def bind_window(self, window: Any) -> None:
         self._window = window
@@ -48,13 +52,13 @@ class Api:
             cfg = Config.load()
             scrobbler = None
             if cfg.lastfm_session_key:
-                from hifihub.scrobble.lastfm import LastFmScrobbler
-                scrobbler = LastFmScrobbler(
+                from hifihub.scrobble.lastfm import BackgroundScrobbler
+                scrobbler = BackgroundScrobbler(
                     cfg.lastfm_api_key, cfg.lastfm_api_secret, cfg.lastfm_session_key
                 )
             self._controller = PlaybackController(
                 self._library(),
-                on_event=lambda ch, payload: self._bus.emit(ch, payload),
+                on_event=self._on_player_event,
                 enable_smtc=True,
                 scrobbler=scrobbler,
             )
@@ -77,6 +81,104 @@ class Api:
             if cfg.convolution:
                 self._controller.set_convolution(cfg.convolution)
         return self._controller
+
+    # --- Sesión de reproducción persistente --------------------------------
+    # La cola sobrevive al cierre. Se guarda al cambiar de pista o de cola, cada
+    # SAVE_EVERY s mientras suena (en pausa no llegan eventos: no se escribe nada)
+    # y al cerrar. Al arrancar se ofrece EN PAUSA: leerla no abre libmpv ni el
+    # dispositivo; solo el primer play lo hace.
+
+    SAVE_EVERY = 5.0
+
+    def _on_player_event(self, channel: str, payload: dict) -> None:
+        self._bus.emit(channel, payload)
+        try:
+            self._track_session(channel, payload)
+        except Exception:  # noqa: BLE001 — guardar es un extra: nunca corta el audio
+            pass
+
+    def _track_session(self, channel: str, payload: dict) -> None:
+        import time
+
+        if channel == "player:track":
+            self._pos = 0.0
+            self._save_session()
+        elif channel == "player:position" and "position" in payload:
+            self._pos = float(payload["position"] or 0)
+            if time.monotonic() - self._saved_at >= self.SAVE_EVERY:
+                self._save_session()
+        elif channel == "player:queue":
+            self._save_session()
+        elif channel == "player:state" and payload.get("ended"):
+            # Cola terminada de forma natural: no queda nada que «continuar».
+            from hifihub.player import session_state
+            session_state.clear()
+
+    def _save_session(self) -> None:
+        import time
+
+        from hifihub.player import session_state
+
+        self._saved_at = time.monotonic()
+        if self._controller is None:
+            return
+        state = session_state.snapshot(self._controller.get_queue(), self._pos)
+        if state:
+            session_state.save(state)
+
+    def saved_session(self) -> dict[str, Any]:
+        """Pista de la sesión anterior para mostrarla en pausa al arrancar.
+
+        Solo lee el JSON y UNA fila de la biblioteca: no arranca libmpv."""
+        if self._controller is not None and self._controller.current_track():
+            return {"ok": False}
+        from hifihub.player import session_state
+        from hifihub.player.controller import _row_to_track
+
+        state = session_state.load()
+        row = session_state.current_entry(self._library(), state) if state else None
+        if row is None:
+            return {"ok": False}
+        return {"ok": True, "track": _row_to_track(row), "position": state.get("position", 0),
+                "index": state["index"], "total": len(state["ids"]),
+                "volume": state.get("volume", 100.0)}
+
+    def resume_session(self) -> dict[str, Any]:
+        """Retoma la sesión guardada: misma cola, pista, segundo y modos."""
+        from hifihub.player import session_state
+
+        state = session_state.load()
+        if not state:
+            return {"ok": False, "error": "No hay sesión guardada."}
+        rows, index = session_state.resolve(self._library(), state)
+        if not rows:
+            session_state.clear()
+            return {"ok": False, "error": "Las pistas de la sesión anterior ya no están."}
+        # Si la que sonaba ya no existe se empieza la siguiente desde el principio.
+        saved_paths = state.get("paths") or []
+        same = 0 <= state["index"] < len(saved_paths) and rows[index]["path"] == saved_paths[state["index"]]
+        self._player().restore(
+            rows, index, state.get("position", 0) if same else 0.0,
+            shuffle=bool(state.get("shuffle")), repeat=state.get("repeat", "off"),
+            volume=float(state.get("volume", 100.0)),
+        )
+        return {"ok": True, "playing": True}
+
+    def _shutdown(self, *_args: Any) -> None:
+        """Al cerrar la ventana: guarda dónde se quedó y decide el último scrobble.
+
+        Privado (con _) para que pywebview no lo exponga a la interfaz. No cierra
+        libmpv a mano: el proceso termina igual que antes."""
+        if self._controller is None:
+            return
+        try:
+            self._save_session()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            self._controller.flush_scrobble()
+        except Exception:  # noqa: BLE001
+            pass
 
     # --- Metadatos para poblar la UI -------------------------------------
 
@@ -108,6 +210,10 @@ class Api:
             "audio_device": cfg.audio_device,
             "analyze_bpm_key": cfg.analyze_bpm_key,
             "lastfm_session_key": cfg.lastfm_session_key,
+            # El secreto de Last.fm no vuelve a la interfaz: solo si está guardado.
+            "lastfm_api_key": cfg.lastfm_api_key,
+            "lastfm_has_secret": bool(cfg.lastfm_api_secret),
+            "lastfm_username": cfg.lastfm_username,
             "replaygain_mode": cfg.replaygain_mode,
             "replaygain_preamp": cfg.replaygain_preamp,
             "multi_source": cfg.multi_source,
@@ -307,6 +413,58 @@ class Api:
         from hifihub.engine import session
 
         session.disconnect()
+        return {"ok": True}
+
+    # --- Last.fm (scrobbling opcional) -------------------------------------
+    # Flujo oficial de escritorio: token -> el usuario autoriza en SU navegador ->
+    # se canjea por una session key que no caduca. Es la única función de la app
+    # que envía datos de escucha fuera del equipo, y solo si el usuario la conecta.
+
+    def lastfm_connect(self, api_key: str, api_secret: str = "") -> dict[str, Any]:
+        """Paso 1: guarda las credenciales y abre la página de autorización."""
+        import webbrowser
+
+        from hifihub.scrobble.lastfm import LastFmError, auth_url, get_token
+
+        cfg = Config.load()
+        cfg.lastfm_api_key = (api_key or "").strip()
+        if (api_secret or "").strip():          # vacío = conservar el ya guardado
+            cfg.lastfm_api_secret = api_secret.strip()
+        cfg.save()
+        try:
+            self._lastfm_token = get_token(cfg.lastfm_api_key, cfg.lastfm_api_secret)
+        except LastFmError as e:
+            return {"ok": False, "error": str(e)}
+        webbrowser.open(auth_url(cfg.lastfm_api_key, self._lastfm_token))
+        return {"ok": True}
+
+    def lastfm_finish(self) -> dict[str, Any]:
+        """Paso 2: tras autorizar en el navegador, obtiene la sesión y la activa."""
+        from hifihub.scrobble.lastfm import BackgroundScrobbler, LastFmError, get_session
+
+        if not self._lastfm_token:
+            return {"ok": False, "error": "Pulsa primero «Conectar con Last.fm»."}
+        cfg = Config.load()
+        try:
+            key, user = get_session(cfg.lastfm_api_key, cfg.lastfm_api_secret, self._lastfm_token)
+        except LastFmError as e:
+            return {"ok": False, "error": str(e)}
+        self._lastfm_token = None
+        cfg.lastfm_session_key, cfg.lastfm_username = key, user
+        cfg.save()
+        if self._controller is not None:       # en caliente, sin reiniciar
+            self._controller.set_scrobbler(
+                BackgroundScrobbler(cfg.lastfm_api_key, cfg.lastfm_api_secret, key))
+        return {"ok": True, "username": user}
+
+    def lastfm_disconnect(self) -> dict[str, Any]:
+        """Deja de enviar escuchas. Conserva la API key para reconectar fácil."""
+        cfg = Config.load()
+        cfg.lastfm_session_key = cfg.lastfm_username = ""
+        cfg.save()
+        self._lastfm_token = None
+        if self._controller is not None:
+            self._controller.set_scrobbler(None)
         return {"ok": True}
 
     # --- Biblioteca -------------------------------------------------------
@@ -515,6 +673,91 @@ class Api:
             lib.delete_track(r["id"])
         return {"ok": True, "count": len(rows), "recycled": recycled}
 
+    def delete_tracks(self, track_ids: list[int]) -> dict[str, Any]:
+        """Selección múltiple: cada archivo a la Papelera + su fila (como delete_album)."""
+        lib = self._library()
+        count = recycled = 0
+        for tid in track_ids or []:
+            row = lib.get_track(int(tid))
+            if row is None:
+                continue
+            if self._recycle(row["path"]):
+                recycled += 1
+            lib.delete_track(row["id"])
+            count += 1
+        return {"ok": count > 0, "count": count, "recycled": recycled}
+
+    # --- Portada elegida a mano --------------------------------------------
+
+    def _release_while(self, paths_: set[str], work):
+        """Ejecuta `work()` con el archivo que suena liberado y retoma en el mismo punto.
+
+        Escribir en un archivo que mpv está leyendo funciona en Windows (medido),
+        pero en FLAC/MP4 la portada se inserta ANTES del audio y desplaza los bytes
+        que mpv lee por posición. Se para, se escribe y se recarga la misma cola
+        (mismo segundo, modos y pausa) para que lo reabra con los datos correctos.
+        Si lo que suena no está entre `paths_`, no se interrumpe nada.
+        """
+        ctrl = self._controller
+        if ctrl is None or ctrl.current_path() not in paths_:
+            return work()
+        q, pos, playing = ctrl.get_queue(), self._pos, ctrl.is_playing()
+        ctrl.stop()
+        try:
+            return work()
+        finally:
+            lib = self._library()
+            # Filas frescas (con la portada nueva); una que ya no esté se omite.
+            rows = [lib.get_track(t["id"]) for t in q["queue"] if t.get("id") is not None]
+            keep = [r for r in rows if r is not None]
+            if keep and len(keep) == len(q["queue"]):
+                ctrl.restore(keep, q["index"], pos, shuffle=q["shuffle"], repeat=q["repeat"],
+                             volume=q["volume"], paused=not playing)
+
+    def choose_cover_image(self) -> str | None:
+        """Diálogo nativo para elegir la imagen de la portada."""
+        if self._window is None:
+            return None
+        import webview
+
+        result = self._window.create_file_dialog(
+            webview.OPEN_DIALOG,
+            file_types=("Imágenes (*.jpg;*.jpeg;*.png;*.webp)", "Todos (*.*)"),
+        )
+        if not result:
+            return None
+        return result[0] if isinstance(result, (list, tuple)) else str(result)
+
+    def set_cover(self, track_ids: list[int], image_path: str | None = None) -> dict[str, Any]:
+        """Pone una portada elegida a mano a una o varias pistas (álbum, selección).
+
+        Se recorta a cuadrado y se normaliza a JPEG (máx. 1200 px) como las demás.
+        Se escribe en los ARCHIVOS: la verá cualquier reproductor."""
+        ids = []
+        for t in track_ids or []:
+            try:
+                ids.append(int(t))
+            except (TypeError, ValueError):
+                continue
+        if not ids:
+            return {"ok": False, "error": "No hay pistas a las que poner portada."}
+        image_path = image_path or self.choose_cover_image()
+        if not image_path:
+            return {"ok": False, "error": "Cancelado."}
+        from hifihub.library.editing import apply_cover
+        from hifihub.metadata.artwork import prepare_cover
+
+        try:
+            jpeg = prepare_cover(Path(image_path).read_bytes())
+        except Exception as e:  # noqa: BLE001 — archivo ilegible o no es una imagen
+            return {"ok": False, "error": f"No se pudo leer la imagen: {e}"}
+        lib = self._library()
+        rows = [r for r in (lib.get_track(i) for i in ids) if r is not None]
+        res = self._release_while({r["path"] for r in rows}, lambda: apply_cover(lib, rows, jpeg))
+        if not res["updated"]:
+            return {"ok": False, "error": "No se pudo escribir la portada en ningún archivo."}
+        return {"ok": True, **res}
+
     # --- Playlists (C2) ----------------------------------------------------
 
     def _playlists(self):
@@ -570,6 +813,11 @@ class Api:
         self._playlists().remove_track(int(playlist_id), int(track_id))
         return {"ok": True}
 
+    def playlist_remove_many(self, playlist_id: int, track_ids: list[int]) -> dict[str, Any]:
+        """Quita varias pistas de una playlist (selección múltiple), en un solo paso."""
+        n = self._playlists().remove_tracks(int(playlist_id), [int(t) for t in track_ids or []])
+        return {"ok": True, "removed": n}
+
     def playlist_move(self, playlist_id: int, position: int, delta: int) -> dict[str, Any]:
         moved = self._playlists().move(int(playlist_id), int(position), int(delta))
         return {"ok": moved}
@@ -616,6 +864,71 @@ class Api:
         added = len(self._playlists().tracks(pid))
         return {"ok": True, "id": pid, "added": added,
                 "note": "Solo se añaden pistas que ya están en la biblioteca."}
+
+    # --- Playlists inteligentes ------------------------------------------------
+    # Se definen por reglas y se recalculan al abrirlas (library/smart.py).
+
+    def smart_catalog(self) -> dict[str, Any]:
+        """Campos, operadores, órdenes y plantillas para construir el editor."""
+        from hifihub.library import smart
+        return smart.catalog()
+
+    def smart_list(self) -> list[dict[str, Any]]:
+        """Tarjetas: nombre, resumen, nº de pistas, duración y hasta 4 portadas."""
+        from hifihub.library import smart
+
+        lib = self._library()
+        out = []
+        for sp in smart.list_all(lib):
+            # Columnas mínimas: para la tarjeta no hace falta la fila entera.
+            rows = smart.evaluate(lib, sp["spec"], cols="id, cover_path, duration", seed=sp["id"])
+            covers = list(dict.fromkeys(r["cover_path"] for r in rows if r["cover_path"]))[:4]
+            out.append({**sp, "summary": smart.summary(sp["spec"]), "n": len(rows), "covers": covers,
+                        "duration": sum(r["duration"] or 0 for r in rows)})
+        return out
+
+    def smart_tracks(self, smart_id: int) -> dict[str, Any]:
+        from hifihub.library import smart
+
+        lib = self._library()
+        sp = smart.get(lib, int(smart_id))
+        if sp is None:
+            return {"ok": False, "error": "La playlist inteligente ya no existe."}
+        rows = smart.evaluate(lib, sp["spec"], seed=sp["id"])
+        return {"ok": True, **sp, "summary": smart.summary(sp["spec"]),
+                "tracks": [dict(r) for r in rows]}
+
+    def smart_preview(self, spec: dict[str, Any]) -> dict[str, Any]:
+        """Cuántas pistas cumplen unas reglas (contador en vivo del editor)."""
+        from hifihub.library import smart
+
+        try:
+            return {"ok": True, **smart.count(self._library(), spec)}
+        except smart.SmartError as e:
+            return {"ok": False, "error": str(e)}
+
+    def smart_save(self, smart_id: int | None, name: str, spec: dict[str, Any]) -> dict[str, Any]:
+        from hifihub.library import smart
+
+        try:
+            sid = smart.save(self._library(), name, spec,
+                             int(smart_id) if smart_id is not None else None)
+        except smart.SmartError as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True, "id": sid}
+
+    def smart_delete(self, smart_id: int) -> dict[str, Any]:
+        from hifihub.library import smart
+
+        smart.delete(self._library(), int(smart_id))
+        return {"ok": True}
+
+    def smart_freeze(self, smart_id: int) -> dict[str, Any]:
+        """Convierte el resultado ACTUAL en una playlist normal (fija, exportable)."""
+        res = self.smart_tracks(smart_id)
+        if not res["ok"]:
+            return res
+        return self.playlist_create_with(res["name"], [t["id"] for t in res["tracks"]])
 
     def library_stats(self) -> dict[str, Any]:
         return self._library().stats()
@@ -691,7 +1004,15 @@ class Api:
         self._player().play_index(int(index))
         return {"ok": True}
 
+    def player_move(self, src: int, dst: int) -> dict[str, Any]:
+        """Reordena la cola arrastrando (dst = posición final de la pista)."""
+        return {"ok": self._player().move_in_queue(int(src), int(dst))}
+
     def player_toggle(self) -> dict[str, Any]:
+        # Nada cargado pero hay una sesión guardada: el play la retoma.
+        if self._controller is None or self._controller.current_track() is None:
+            if self.resume_session().get("ok"):
+                return {"playing": True}
         return self._player().toggle_pause()
 
     def player_next(self) -> dict[str, Any]:
@@ -878,9 +1199,11 @@ class Api:
         """Mezclas y cifras para la pantalla «Para ti». Todo se calcula aquí:
         no sale nada del equipo ni se consulta ningún servicio."""
         from hifihub.library.recommend import build_mixes, build_strips, headline_stats
+        from hifihub.library.smart import foryou_mixes
 
         lib = self._library()
-        return {"stats": headline_stats(lib), "mixes": build_mixes(lib),
+        # Las inteligentes marcadas «Mostrar en Para ti» van tras las automáticas.
+        return {"stats": headline_stats(lib), "mixes": build_mixes(lib) + foryou_mixes(lib),
                 "strips": build_strips(lib)}
 
     # --- Convolución por impulso---------------------------------

@@ -177,6 +177,17 @@ class Library:
         rows = self.conn.execute("SELECT path, mtime FROM tracks").fetchall()
         return {r["path"]: r["mtime"] for r in rows}
 
+    def set_covers(self, entries: list[tuple[int, float]], cover_path: str | None) -> None:
+        """Misma portada para varias pistas: [(id, mtime)].
+
+        El mtime nuevo evita que el próximo escaneo vuelva a leer esos archivos
+        solo porque se les incrustó la portada."""
+        self.conn.executemany(
+            "UPDATE tracks SET cover_path = ?, mtime = ? WHERE id = ?",
+            [(cover_path, mtime, tid) for tid, mtime in entries],
+        )
+        self.conn.commit()
+
     def delete_track(self, track_id: int) -> None:
         """Quita una pista de la BIBLIOTECA (la fila). El archivo no se toca."""
         self.conn.execute("DELETE FROM tracks WHERE id = ?", (track_id,))

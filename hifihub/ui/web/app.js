@@ -31,8 +31,10 @@ function toast(msg, isError = false) {
 }
 
 // Diálogo de confirmación (promesa: resuelve true si el usuario acepta).
-function confirmDialog({ title = "¿Confirmar?", msg = "", okLabel = "Eliminar" } = {}) {
+function confirmDialog({ title = "¿Confirmar?", msg = "", okLabel = "Eliminar", kick = "Confirmar", danger = true } = {}) {
   const modal = $("#confirm-modal");
+  modal.classList.toggle("danger", danger);
+  $("#confirm-kick").textContent = kick;
   $("#confirm-title").textContent = title;
   $("#confirm-msg").textContent = msg;
   $("#btn-confirm-ok").textContent = okLabel;
@@ -85,11 +87,6 @@ async function init() {
   $("#cfg-waitopen").value = cfg.device_wait_open ?? 0.3;
   $("#cfg-limiter").checked = !!cfg.limiter_enabled;
   $("#cfg-listening").checked = !!cfg.listening_mode;
-  SONGS_PER_PAGE = cfg.songs_per_page || 15;
-  $("#songs-per-page").value = String(SONGS_PER_PAGE);
-  GRID_PER_PAGE = cfg.grid_per_page || 25;
-  $("#grid-per-page").value = String(GRID_PER_PAGE);
-  $("#grid-per-page-2").value = String(GRID_PER_PAGE);
   updateWasapiOpts();
   $("#cfg-gain").checked = !!cfg.apply_replaygain;
   $("#sponsorblock").checked = !!cfg.sponsorblock;
@@ -101,6 +98,7 @@ async function init() {
   $("#rg-mode").value = cfg.replaygain_mode || "track";
   $("#rg-preamp").value = cfg.replaygain_preamp ?? 3;
   $("#rg-preamp-val").textContent = "+" + ($("#rg-preamp").value) + " dB";
+  paintRange($("#rg-preamp"));
 
   $("#cfg-autoupd").checked = cfg.auto_check_updates !== false;
   $("#cfg-channel").value = cfg.ytdlp_channel || "stable";
@@ -108,17 +106,18 @@ async function init() {
   wireEvents();
   wireSources();
   wireDownloadEvents();
-  wireLibTools();
   wireWasapiOpts();
   wireShortcuts();
-  wireLibrary();
+  wireLibrary(cfg);
   wirePlaylists();
   wireContextMenu();
   wirePlayer();
   wireUpdates();
   wireImport();
+  wireLastfm(cfg);
   loadForYou();      // «Para ti» es la vista de arranque
-  loadAlbums();
+  loadSavedSession(); // la sesión anterior queda preparada en pausa
+  renderLib(false);  // la biblioteca se prepara en segundo plano
 
   // Chequeo silencioso al arrancar (solo avisa; instalar requiere un clic).
   if (cfg.auto_check_updates !== false) autoCheckUpdates();
@@ -306,6 +305,46 @@ async function applyUpdate(btn) {
   }
 }
 
+// ============ LAST.FM ============
+// Conectar = pedir token + autorizar en el navegador + «Ya lo autoricé». Actúa al
+// instante (no espera al botón Guardar de Ajustes) y el secreto nunca vuelve a la
+// interfaz: solo se indica si ya hay uno guardado.
+
+function wireLastfm(cfg) {
+  $("#cfg-lfm-key").value = cfg.lastfm_api_key || "";
+  $("#cfg-lfm-secret").placeholder = cfg.lastfm_has_secret ? "(guardado)" : "";
+  renderLastfm(cfg.lastfm_session_key ? cfg.lastfm_username || "tu cuenta" : null);
+
+  $("#btn-lfm-connect").addEventListener("click", async () => {
+    const res = await window.pywebview.api.lastfm_connect(
+      $("#cfg-lfm-key").value.trim(), $("#cfg-lfm-secret").value.trim());
+    if (!res.ok) return toast(res.error, true);
+    $("#cfg-lfm-secret").value = "";
+    $("#cfg-lfm-secret").placeholder = "(guardado)";
+    $("#lfm-status").textContent =
+      "Se abrió Last.fm en tu navegador: concede el permiso y vuelve aquí.";
+    $("#btn-lfm-finish").hidden = false;
+  });
+  $("#btn-lfm-finish").addEventListener("click", async () => {
+    const res = await window.pywebview.api.lastfm_finish();
+    if (!res.ok) return toast(res.error, true);
+    renderLastfm(res.username || "tu cuenta");
+    toast("Last.fm conectado.");
+  });
+  $("#btn-lfm-disconnect").addEventListener("click", async () => {
+    await window.pywebview.api.lastfm_disconnect();
+    renderLastfm(null);
+    toast("Last.fm desconectado: ya no se envía nada.");
+  });
+}
+
+function renderLastfm(user) {
+  $("#lfm-status").textContent = user ? `● Conectado como ${user}` : "○ Sin conectar";
+  $("#btn-lfm-connect").hidden = !!user;
+  $("#btn-lfm-finish").hidden = true;
+  $("#btn-lfm-disconnect").hidden = !user;
+}
+
 function fillSelect(sel, values) {
   sel.innerHTML = "";
   for (const v of values) {
@@ -326,6 +365,14 @@ function switchView(name) {
   document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
   const view = $("#view-" + name);
   if (view) view.classList.add("active");
+  // Con la nav en una sola línea, la pestaña activa puede quedar fuera de vista.
+  const activeTab = document.querySelector(`.tab[data-view="${name}"]`);
+  if (activeTab) activeTab.scrollIntoView({ block: "nearest", inline: "nearest" });
+  // La escena del tocadiscos solo anima mientras su vista está a la vista.
+  const inPlayer = name === "reproduciendo";
+  window.NowStage.setActive(inPlayer);
+  // Sin nada cargado no se pide la cola: arrancaría libmpv antes de tiempo.
+  if (inPlayer && NP_TAB === "queue-inline" && HAS_TRACK) renderQueueInto($("#qi-list"), $("#qi-count"));
   updateMiniVisibility();   // la barra depende de la vista activa
   if (name === "parati") loadForYou();
   if (name === "ajustes" && !devicesLoaded) loadDevices();
@@ -573,154 +620,12 @@ function wireDownloadEvents() {
 }
 
 // ============ BIBLIOTECA ============
-let CURRENT_ALBUM = null;
-let CURRENT_SUB = "albums";
-let CURRENT_ARTIST_TRACKS = [];
-
-// Rejillas de Álbumes y Artistas: mismo patrón que Canciones (filtro local +
-// paginación). Su tamaño de página es propio: en una rejilla caben más tarjetas.
-let ALBUMS = [], ALBUMS_VIEW = [], ALBUMS_PAGE = 0;
-let ARTISTS = [], ARTISTS_VIEW = [], ARTISTS_PAGE = 0;
-let GRID_PER_PAGE = 25;
-
-// Canciones: lista completa en memoria, mostrada filtrada y paginada.
-let SONGS = [];        // todo lo cargado (ya ordenado)
-let SONGS_VIEW = [];   // lo que queda tras el filtro -> es lo que se reproduce
-let SONGS_PAGE = 0;
-let SONGS_PER_PAGE = 15;
-
-function wireLibrary() {
-  $("#btn-scan").addEventListener("click", () => rescanLibrary());
-
-  // Canciones: UN solo listener delegado en el contenedor, en vez de uno por fila.
-  // Se registra aquí (wireLibrary corre una vez) porque loadSongs se llama cada vez
-  // que se entra a la subvista y acumularía listeners.
-  $("#songs").addEventListener("dblclick", (e) => {
-    const row = e.target.closest(".track-row");
-    if (!row || row.dataset.i === undefined) return;
-    // Se manda la lista visible completa (ya ordenada/filtrada) y la posición.
-    window.pywebview.api.play_ids(SONGS_VIEW.map((t) => t.id), parseInt(row.dataset.i));
-  });
-  let songsFilterTimer;
-  $("#songs-filter").addEventListener("input", () => {
-    // Es local: se puede refrescar casi al instante sin castigar nada.
-    clearTimeout(songsFilterTimer);
-    songsFilterTimer = setTimeout(applySongsFilter, 120);
-  });
-  $("#songs-per-page").addEventListener("change", async (e) => {
-    SONGS_PER_PAGE = parseInt(e.target.value) || 15;
-    SONGS_PAGE = 0;
-    renderSongsPage();
-    await window.pywebview.api.save_config({ songs_per_page: SONGS_PER_PAGE });
-  });
-  // Rejillas: filtro local + paginación (mismo patrón que Canciones).
-  let albTimer, artTimer;
-  $("#albums-filter").addEventListener("input", () => {
-    clearTimeout(albTimer);
-    albTimer = setTimeout(() => applyAlbumsFilter(), 120);
-  });
-  $("#artists-filter").addEventListener("input", () => {
-    clearTimeout(artTimer);
-    artTimer = setTimeout(() => applyArtistsFilter(), 120);
-  });
-  // Un solo ajuste para las dos rejillas: los dos selectores se mantienen a la par.
-  const onGridSize = async (value) => {
-    GRID_PER_PAGE = parseInt(value) || 25;
-    $("#grid-per-page").value = String(GRID_PER_PAGE);
-    $("#grid-per-page-2").value = String(GRID_PER_PAGE);
-    ALBUMS_PAGE = ARTISTS_PAGE = 0;
-    if (CURRENT_SUB === "artists") renderArtistsPage();
-    else renderAlbumsPage();
-    await window.pywebview.api.save_config({ grid_per_page: GRID_PER_PAGE });
-  };
-  $("#grid-per-page").addEventListener("change", (e) => onGridSize(e.target.value));
-  $("#grid-per-page-2").addEventListener("change", (e) => onGridSize(e.target.value));
-  const goGrid = (which, delta) => {
-    if (which === "albums") { ALBUMS_PAGE += delta; renderAlbumsPage(); }
-    else { ARTISTS_PAGE += delta; renderArtistsPage(); }
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-  $("#albums-prev").addEventListener("click", () => goGrid("albums", -1));
-  $("#albums-next").addEventListener("click", () => goGrid("albums", 1));
-  $("#artists-prev").addEventListener("click", () => goGrid("artists", -1));
-  $("#artists-next").addEventListener("click", () => goGrid("artists", 1));
-
-  $("#songs-prev").addEventListener("click", () => goSongsPage(-1));
-  $("#songs-next").addEventListener("click", () => goSongsPage(1));
-
-  let searchTimer;
-  $("#search").addEventListener("input", (e) => {
-    clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => doSearch(e.target.value), 250);
-  });
-
-  // Subnavegación Álbumes / Artistas / Canciones
-  document.querySelectorAll(".subtab").forEach((tab) => {
-    tab.addEventListener("click", () => switchSub(tab.dataset.sub));
-  });
-
-  // Nombres de artista clicables en CUALQUIER vista (delegación global).
-  document.addEventListener("click", (e) => {
-    const link = e.target.closest(".artist-link");
-    if (!link) return;
-    e.stopPropagation();
-    openArtist(link.dataset.artist === "" ? null : link.dataset.artist);
-  });
-
-  $("#btn-artist-back").addEventListener("click", () => {
-    $("#artist-page").hidden = true;
-    $("#artists").hidden = false;
-    loadArtists(false);      // vuelve a la MISMA página, no a la 1
-  });
-
-  // Volver de la página de álbum al grid (y re-pintar por si se borró algo).
-  $("#btn-album-back").addEventListener("click", () => loadAlbums(false));
-}
-
-function switchSub(name, load = true) {
-  CURRENT_SUB = name;
-  // Elegir una subpestaña sale de la búsqueda (si no, quedaría oculta detrás).
-  if ($("#view-biblioteca").classList.contains("searching")) {
-    $("#search").value = "";
-    exitSearch();
-  }
-  document.querySelectorAll(".subtab").forEach((t) =>
-    t.classList.toggle("active", t.dataset.sub === name)
-  );
-  document.querySelectorAll(".subview").forEach((v) => v.classList.remove("active"));
-  $("#sub-" + name).classList.add("active");
-  // Orden/filtro solo tienen sentido sobre álbumes o pistas.
-  $("#lib-controls").hidden = !(name === "albums" || name === "songs");
-  if (!load) return;
-  if (name === "albums") loadAlbums();
-  else if (name === "artists") loadArtists();
-  else if (name === "songs") loadSongs();
-  else if (name === "playlists") loadPlaylists();
-}
-
-async function rescanLibrary() {
-  $("#lib-stats").textContent = "Escaneando…";
-  const res = await window.pywebview.api.scan_library();
-  $("#lib-stats").textContent = `${res.tracks} pistas · ${res.albums} álbumes · ${res.artists} artistas`;
-  refreshLibrary();
-}
-
-function refreshLibrary() {
-  if (CURRENT_SUB === "albums") loadAlbums();
-  else if (CURRENT_SUB === "artists") loadArtists();
-  else if (CURRENT_SUB === "songs") loadSongs();
-}
+// La vista vive en biblioteca.js. Aquí quedan las piezas que comparten otras
+// vistas: enlaces de artista, menú contextual, menú de playlists, edición y portadas.
 
 function artistLink(name) {
   const label = name || "(sin artista)";
   return `<span class="artist-link" data-artist="${escapeHtml(name || "")}">${escapeHtml(label)}</span>`;
-}
-
-function plusBtn(trackId) {
-  return (
-    `<button class="row-add" data-id="${trackId}" title="Añadir a playlist"><i class="ph-bold ph-plus"></i></button>` +
-    `<button class="row-ctx" data-id="${trackId}" title="Más acciones"><i class="ph-bold ph-dots-three"></i></button>`
-  );
 }
 
 // ============ MENÚ CONTEXTUAL POR PISTA (⋯) ============
@@ -793,6 +698,7 @@ function openContextMenu(btn, trackId) {
     ["Añadir a playlist…", () => openPlaylistMenuFor(btn, trackId)],
     ["Editar información", () => openEdit(trackId)],
     ["Mostrar en carpeta", () => window.pywebview.api.reveal_in_folder(trackId)],
+    ["Cambiar portada…", () => changeCover([trackId])],
     ["Quitar de la biblioteca", async () => {
       await window.pywebview.api.remove_from_library(trackId);
       toast("Quitada de la biblioteca (el archivo sigue en disco).");
@@ -865,28 +771,20 @@ async function saveEdit() {
   refreshLibrary();
 }
 
+// --- Portada elegida a mano ---
+// Una pista, un álbum o una selección: la imagen se escribe en los archivos. Si
+// suena una de ellas, el backend corta y retoma en el mismo segundo.
+async function changeCover(trackIds) {
+  const res = await window.pywebview.api.set_cover(trackIds, null);
+  if (!res.ok) return res.error !== "Cancelado." && toast(res.error, true);
+  toast(res.failed
+    ? `Portada aplicada a ${res.updated} pista(s) · ${res.failed} no admiten portada.`
+    : `Portada aplicada a ${res.updated} pista(s).`);
+  refreshLibrary();
+}
+
 // ============ PLAYLISTS ============
-let CURRENT_PLAYLIST = null;
-
 function wirePlaylists() {
-  $("#btn-pl-create").addEventListener("click", async () => {
-    const res = await window.pywebview.api.playlist_create($("#pl-new-name").value);
-    if (!res.ok) return toast(res.error, true);
-    $("#pl-new-name").value = "";
-    loadPlaylists();
-  });
-  $("#btn-pl-import").addEventListener("click", async () => {
-    const res = await window.pywebview.api.playlist_import();
-    if (!res.ok) return res.error !== "Cancelado." && toast(res.error, true);
-    toast(`Importada (${res.added} pistas). ${res.note}`);
-    loadPlaylists();
-  });
-  $("#btn-pl-back").addEventListener("click", () => {
-    $("#playlist-detail").hidden = true;
-    $("#playlists").hidden = false;
-    loadPlaylists();
-  });
-
   // Menú flotante "Añadir a playlist" (botón ＋ de cualquier pista).
   document.addEventListener("click", (e) => {
     const btn = e.target.closest(".row-add");
@@ -947,418 +845,6 @@ async function openPlaylistMenuForMany(anchorEl, trackIds, label = "") {
   });
 }
 
-async function loadPlaylists() {
-  const lists = await window.pywebview.api.playlists_list();
-  $("#playlist-detail").hidden = true;
-  const box = $("#playlists");
-  box.hidden = false;
-  box.innerHTML = lists.length
-    ? lists
-        .map(
-          (p) =>
-            `<div class='track-row pl-row' data-pid='${p.id}' data-name='${escapeHtml(p.name)}'>
-               <span class='track-title'>${escapeHtml(p.name)}</span>
-               <span class='hint'>${p.n} pista(s)</span>
-             </div>`
-        )
-        .join("")
-    : "<div class='hint'>Sin playlists. Crea una arriba y añade canciones con el botón ＋.</div>";
-  box.querySelectorAll(".pl-row").forEach((row) => {
-    row.addEventListener("click", () => openPlaylist(parseInt(row.dataset.pid), row.dataset.name));
-  });
-}
-
-async function openPlaylist(pid, name) {
-  CURRENT_PLAYLIST = { id: pid, name };
-  const tracks = await window.pywebview.api.playlist_tracks(pid);
-  $("#playlists").hidden = true;
-  $("#playlist-detail").hidden = false;
-  $("#pl-rename-row").hidden = true;
-  $("#pl-name").textContent = name;
-  $("#pl-meta").textContent =
-    `${tracks.length} pista(s) · ${fmtDur(tracks.reduce((s, t) => s + (t.duration || 0), 0))}`;
-
-  $("#btn-pl-play").onclick = () => window.pywebview.api.play_playlist(pid, 0);
-  $("#btn-pl-export").onclick = async () => {
-    const res = await window.pywebview.api.playlist_export(pid);
-    if (res.ok) toast("Exportada: " + res.path);
-    else if (res.error !== "Cancelado.") toast(res.error, true);
-  };
-  $("#btn-pl-delete").onclick = async () => {
-    await window.pywebview.api.playlist_delete(pid);
-    toast("Playlist eliminada (las canciones siguen en la biblioteca).");
-    loadPlaylists();
-  };
-  $("#btn-pl-rename").onclick = () => {
-    $("#pl-rename-row").hidden = false;
-    $("#pl-rename-input").value = CURRENT_PLAYLIST.name;
-    $("#pl-rename-input").focus();
-  };
-  $("#btn-pl-rename-ok").onclick = async () => {
-    const res = await window.pywebview.api.playlist_rename(pid, $("#pl-rename-input").value);
-    if (!res.ok) return toast(res.error, true);
-    openPlaylist(pid, $("#pl-rename-input").value.trim());
-  };
-
-  $("#pl-tracks").innerHTML = tracks.length
-    ? tracks
-        .map(
-          (t, i) =>
-            `<div class='track-row' data-i='${i}' data-track-id='${t.id}'>
-               <span class='track-num'>${i + 1}</span>
-               <span class='track-title'>${escapeHtml(t.title || "")}</span>
-               ${artistLink(t.artist || t.album_artist)}
-               <span class='track-dur hint'>${fmtDur(t.duration)}</span>
-               <button class='row-mini' data-act='up' data-i='${i}' title='Subir'><i class="ph-bold ph-caret-up"></i></button>
-               <button class='row-mini' data-act='down' data-i='${i}' title='Bajar'><i class="ph-bold ph-caret-down"></i></button>
-               <button class='row-mini' data-act='del' data-tid='${t.id}' title='Quitar'><i class="ph-bold ph-x"></i></button>
-             </div>`
-        )
-        .join("")
-    : "<div class='hint'>Vacía. Añade canciones con el botón ＋ en cualquier vista.</div>";
-
-  markPlaying();
-  $("#pl-tracks").querySelectorAll(".track-row").forEach((row) => {
-    row.addEventListener("dblclick", () =>
-      window.pywebview.api.play_playlist(pid, parseInt(row.dataset.i))
-    );
-  });
-  $("#pl-tracks").querySelectorAll(".row-mini").forEach((btn) => {
-    btn.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      const act = btn.dataset.act;
-      if (act === "del") await window.pywebview.api.playlist_remove(pid, parseInt(btn.dataset.tid));
-      else await window.pywebview.api.playlist_move(pid, parseInt(btn.dataset.i), act === "up" ? -1 : 1);
-      openPlaylist(pid, CURRENT_PLAYLIST.name);
-    });
-  });
-}
-
-// --- Orden y filtro (compartidos por Álbumes y Canciones) -------------------
-
-function libSort() {
-  const el = $("#lib-sort");
-  return el ? el.value : "artist";
-}
-
-function onlyLossless() {
-  const el = $("#lib-lossless");
-  return !!(el && el.checked);
-}
-
-const _txt = (v) => String(v || "").toLowerCase();
-const _num = (v) => (typeof v === "number" ? v : parseFloat(v) || 0);
-
-// Comparador para ÁLBUMES según el selector de orden.
-function sortAlbums(list) {
-  const mode = libSort();
-  const by = {
-    artist: (a, b) => _txt(a.album_artist).localeCompare(_txt(b.album_artist)) ||
-                      _txt(a.album).localeCompare(_txt(b.album)),
-    title: (a, b) => _txt(a.album).localeCompare(_txt(b.album)),
-    year: (a, b) => _txt(b.date).localeCompare(_txt(a.date)),
-    added: (a, b) => _num(b.added_at) - _num(a.added_at),
-    plays: (a, b) => _num(b.play_count) - _num(a.play_count),
-    duration: (a, b) => _num(b.total_duration) - _num(a.total_duration),
-  };
-  return list.slice().sort(by[mode] || by.artist);
-}
-
-// Comparador para PISTAS.
-function sortTracks(list) {
-  const mode = libSort();
-  const by = {
-    artist: (a, b) => _txt(a.album_artist || a.artist).localeCompare(_txt(b.album_artist || b.artist)) ||
-                      _txt(a.album).localeCompare(_txt(b.album)) ||
-                      _num(a.track_number) - _num(b.track_number),
-    title: (a, b) => _txt(a.title).localeCompare(_txt(b.title)),
-    year: (a, b) => _txt(b.date).localeCompare(_txt(a.date)),
-    added: (a, b) => _num(b.added_at) - _num(a.added_at),
-    plays: (a, b) => _num(b.play_count) - _num(a.play_count),
-    duration: (a, b) => _num(b.duration) - _num(a.duration),
-  };
-  return list.slice().sort(by[mode] || by.artist);
-}
-
-function wireLibTools() {
-  const rerender = () => refreshLibrary();
-  $("#lib-sort").addEventListener("change", rerender);
-  $("#lib-lossless").addEventListener("change", rerender);
-}
-
-async function loadAlbums(resetPage = true) {
-  closeAlbumPage();   // volver al grid al (re)cargar la subvista
-  let albums = await window.pywebview.api.list_albums();
-  const stats = await window.pywebview.api.library_stats();
-  $("#lib-stats").textContent = `${stats.tracks} pistas · ${stats.albums} álbumes · ${stats.artists} artistas`;
-  if (onlyLossless()) albums = albums.filter((a) => a.all_lossless);
-  ALBUMS = sortAlbums(albums);
-  ALBUMS_TOTAL_TRACKS = stats.tracks;
-  if (resetPage) ALBUMS_PAGE = 0;
-  applyAlbumsFilter(false);
-}
-
-let ALBUMS_TOTAL_TRACKS = 0;
-
-function applyAlbumsFilter(resetPage = true) {
-  const q = ($("#albums-filter").value || "").trim().toLowerCase();
-  ALBUMS_VIEW = !q
-    ? ALBUMS
-    : ALBUMS.filter((a) =>
-        [a.album, a.album_artist].some((v) => (v || "").toLowerCase().includes(q))
-      );
-  if (resetPage) ALBUMS_PAGE = 0;
-  renderAlbumsPage();
-}
-
-function renderAlbumsPage() {
-  const grid = $("#albums");
-  const pages = Math.max(1, Math.ceil(ALBUMS_VIEW.length / GRID_PER_PAGE));
-  ALBUMS_PAGE = Math.max(0, Math.min(ALBUMS_PAGE, pages - 1));
-  const from = ALBUMS_PAGE * GRID_PER_PAGE;
-  const slice = ALBUMS_VIEW.slice(from, from + GRID_PER_PAGE);
-
-  releaseCovers(grid);
-  grid.innerHTML = "";
-  if (!ALBUMS.length) {
-    grid.innerHTML = emptyState(ALBUMS_TOTAL_TRACKS);
-    wireEmptyState();
-    $("#albums-pager").hidden = true;
-    return;
-  }
-  if (!slice.length) {
-    grid.innerHTML = `<div class='hint empty'>Ningún álbum coincide con el filtro.</div>`;
-    $("#albums-pager").hidden = true;
-    return;
-  }
-  for (const alb of slice) {
-    const card = document.createElement("div");
-    card.className = "album-card";
-    card.innerHTML = `
-      <div class="album-cover" data-cover="${escapeHtml(alb.cover_path || "")}"></div>
-      <div class="album-name">${escapeHtml(alb.album || "(sin álbum)")}${
-        alb.all_lossless ? '<span class="badge-lossless">LOSSLESS</span>' : ""
-      }</div>
-      <div class="album-artist hint">${artistLink(alb.album_artist)}</div>`;
-    card.addEventListener("click", () => openAlbum(alb.album));
-    grid.appendChild(card);
-    lazyCover(card.querySelector(".album-cover"), alb.cover_path);
-  }
-  const pager = $("#albums-pager");
-  pager.hidden = ALBUMS_VIEW.length <= GRID_PER_PAGE;
-  $("#albums-page-info").textContent =
-    `Página ${ALBUMS_PAGE + 1} / ${pages} · ${from + 1}–${Math.min(from + GRID_PER_PAGE, ALBUMS_VIEW.length)} de ${ALBUMS_VIEW.length}`;
-  $("#albums-prev").disabled = ALBUMS_PAGE === 0;
-  $("#albums-next").disabled = ALBUMS_PAGE >= pages - 1;
-}
-
-// Estado vacío: distingue "biblioteca vacía" de "el filtro no deja nada".
-function emptyState(totalTracks) {
-  if (!totalTracks) {
-    return `<div class="empty-state">
-      <i class="ph-bold ph-music-notes-plus"></i>
-      <h4>Tu biblioteca está vacía</h4>
-      <p>Importa música que ya tengas o descarga algo para empezar.</p>
-      <div class="actions">
-        <button class="primary" data-go="importar"><i class="ph-bold ph-folder-plus"></i>Importar música</button>
-        <button class="secondary" data-go="descargas"><i class="ph-bold ph-download-simple"></i>Descargar</button>
-      </div></div>`;
-  }
-  return `<div class="empty-state">
-    <i class="ph-bold ph-funnel"></i>
-    <h4>Nada con este filtro</h4>
-    <p>Ningún álbum es completamente lossless. Prueba a desactivar «Solo lossless».</p>
-    </div>`;
-}
-
-function wireEmptyState() {
-  document.querySelectorAll(".empty-state [data-go]").forEach((b) =>
-    b.addEventListener("click", () => switchView(b.dataset.go))
-  );
-}
-
-// --- Artistas ---
-async function loadArtists(resetPage = true) {
-  const artists = await window.pywebview.api.list_artists();
-  $("#artist-page").hidden = true;
-  $("#artists").hidden = false;
-  ARTISTS = artists;
-  if (resetPage) ARTISTS_PAGE = 0;
-  applyArtistsFilter(false);
-}
-
-function applyArtistsFilter(resetPage = true) {
-  const q = ($("#artists-filter").value || "").trim().toLowerCase();
-  ARTISTS_VIEW = !q
-    ? ARTISTS
-    : ARTISTS.filter((a) => (a.name || "").toLowerCase().includes(q));
-  if (resetPage) ARTISTS_PAGE = 0;
-  renderArtistsPage();
-}
-
-function renderArtistsPage() {
-  const grid = $("#artists");
-  const pages = Math.max(1, Math.ceil(ARTISTS_VIEW.length / GRID_PER_PAGE));
-  ARTISTS_PAGE = Math.max(0, Math.min(ARTISTS_PAGE, pages - 1));
-  const from = ARTISTS_PAGE * GRID_PER_PAGE;
-  const slice = ARTISTS_VIEW.slice(from, from + GRID_PER_PAGE);
-
-  releaseCovers(grid);
-  grid.innerHTML = "";
-  if (!slice.length) {
-    grid.innerHTML = `<div class='hint empty'>Ningún artista coincide con el filtro.</div>`;
-    $("#artists-pager").hidden = true;
-    return;
-  }
-  for (const a of slice) {
-    const card = document.createElement("div");
-    card.className = "album-card";
-    card.innerHTML = `
-      <div class="album-cover artist-cover"></div>
-      <div class="album-name">${escapeHtml(a.name || "(sin artista)")}</div>
-      <div class="album-artist hint">${a.album_count} álbum(es) · ${a.track_count} pista(s)</div>`;
-    card.addEventListener("click", () => openArtist(a.name));
-    grid.appendChild(card);
-    lazyCover(card.querySelector(".album-cover"), a.cover_path);
-  }
-  const pager = $("#artists-pager");
-  pager.hidden = ARTISTS_VIEW.length <= GRID_PER_PAGE;
-  $("#artists-page-info").textContent =
-    `Página ${ARTISTS_PAGE + 1} / ${pages} · ${from + 1}–${Math.min(from + GRID_PER_PAGE, ARTISTS_VIEW.length)} de ${ARTISTS_VIEW.length}`;
-  $("#artists-prev").disabled = ARTISTS_PAGE === 0;
-  $("#artists-next").disabled = ARTISTS_PAGE >= pages - 1;
-}
-
-async function openArtist(name) {
-  // Navegar a Biblioteca > Artistas y abrir la página del artista.
-  document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
-  document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
-  document.querySelector('.tab[data-view="biblioteca"]').classList.add("active");
-  $("#view-biblioteca").classList.add("active");
-  CURRENT_SUB = "artists";
-  document.querySelectorAll(".subtab").forEach((t) =>
-    t.classList.toggle("active", t.dataset.sub === "artists")
-  );
-  document.querySelectorAll(".subview").forEach((v) => v.classList.remove("active"));
-  $("#sub-artists").classList.add("active");
-
-  const page = await window.pywebview.api.artist_page(name);
-  $("#artists").hidden = true;
-  $("#artist-page").hidden = false;
-  $("#artist-name").textContent = page.name || "(sin artista)";
-  $("#artist-meta").textContent =
-    `${page.albums.length} álbum(es) · ${page.track_count} pista(s) · ${fmtDur(page.total_duration)}`;
-  $("#btn-artist-play").onclick = () => window.pywebview.api.play_artist(name, false);
-  $("#btn-artist-shuffle").onclick = () => window.pywebview.api.play_artist(name, true);
-  $("#btn-artist-playlist").onclick = (e) =>
-    openPlaylistMenuForMany(e.currentTarget, page.tracks.map((t) => t.id), name || "");
-
-  const albums = $("#artist-albums");
-  albums.innerHTML = "";
-  for (const alb of page.albums) {
-    const card = document.createElement("div");
-    card.className = "album-card";
-    card.innerHTML = `
-      <div class="album-cover"></div>
-      <div class="album-name">${escapeHtml(alb.album || "(sin álbum)")}</div>
-      <div class="album-artist hint">${alb.track_count} pista(s)</div>`;
-    card.addEventListener("click", () => openAlbum(alb.album));
-    albums.appendChild(card);
-    lazyCover(card.querySelector(".album-cover"), alb.cover_path);
-  }
-
-  CURRENT_ARTIST_TRACKS = page.tracks;
-  $("#artist-tracks").innerHTML = page.tracks
-    .map(
-      (t, i) =>
-        `<div class='track-row' data-i='${i}' data-track-id='${t.id}'>
-           <span class='track-num'>${i + 1}</span>
-           <span class='track-title'>${escapeHtml(t.title || "")}</span>
-           <span class='hint'>${escapeHtml(t.album || "")}</span>
-           <span class='track-dur hint'>${fmtDur(t.duration)}</span>
-           ${plusBtn(t.id)}
-         </div>`
-    )
-    .join("");
-  markPlaying();
-  $("#artist-tracks").querySelectorAll(".track-row").forEach((row) => {
-    row.addEventListener("dblclick", () =>
-      window.pywebview.api.play_artist_from(name, parseInt(row.dataset.i))
-    );
-  });
-}
-
-// --- Canciones (todas) ---
-async function loadSongs() {
-  let tracks = await window.pywebview.api.all_tracks();
-  if (onlyLossless()) tracks = tracks.filter((t) => t.lossless);
-  SONGS = sortTracks(tracks);
-  SONGS_PAGE = 0;
-  applySongsFilter();
-}
-
-// data-i es el índice dentro de SONGS_VIEW (lo que se ve tras filtrar y ordenar).
-// Al reproducir se manda esa lista de ids EXPLÍCITA con play_ids(), así que
-// filtrar o paginar no puede desalinear nada.
-function songRow(t, i) {
-  return `<div class='track-row' data-i='${i}' data-track-id='${t.id}'>
-            <span class='track-num'>${i + 1}</span>
-            <span class='track-title'>${escapeHtml(t.title || "")}</span>
-            ${artistLink(t.artist || t.album_artist)}
-            <span class='hint'>${escapeHtml(t.album || "")}</span>
-            <span class='track-dur hint'>${fmtDur(t.duration)}</span>
-            ${plusBtn(t.id)}
-          </div>`;
-}
-
-// Filtro local e instantáneo: no consulta al backend, acota el array ya cargado.
-function applySongsFilter() {
-  const q = ($("#songs-filter").value || "").trim().toLowerCase();
-  SONGS_VIEW = !q
-    ? SONGS
-    : SONGS.filter((t) =>
-        [t.title, t.artist, t.album_artist, t.album]
-          .some((v) => (v || "").toLowerCase().includes(q))
-      );
-  SONGS_PAGE = 0;          // un filtro nuevo siempre empieza por la página 1
-  renderSongsPage();
-}
-
-function songsPageCount() {
-  return Math.max(1, Math.ceil(SONGS_VIEW.length / SONGS_PER_PAGE));
-}
-
-function renderSongsPage() {
-  const pages = songsPageCount();
-  SONGS_PAGE = Math.max(0, Math.min(SONGS_PAGE, pages - 1));
-  const from = SONGS_PAGE * SONGS_PER_PAGE;
-  const slice = SONGS_VIEW.slice(from, from + SONGS_PER_PAGE);
-
-  $("#songs").innerHTML = slice.length
-    ? slice.map((t, k) => songRow(t, from + k)).join("")
-    : `<div class='hint empty'>Ninguna canción coincide con el filtro.</div>`;
-
-  const total = SONGS.length;
-  const shown = SONGS_VIEW.length;
-  $("#songs-head").textContent = shown === total
-    ? `${total} pista(s) — doble clic para reproducir desde ahí`
-    : `${shown} de ${total} pistas — doble clic para reproducir desde ahí`;
-
-  const pager = $("#songs-pager");
-  pager.hidden = shown <= SONGS_PER_PAGE;
-  $("#songs-page-info").textContent =
-    `Página ${SONGS_PAGE + 1} / ${pages} · ${from + 1}–${Math.min(from + SONGS_PER_PAGE, shown)}`;
-  $("#songs-prev").disabled = SONGS_PAGE === 0;
-  $("#songs-next").disabled = SONGS_PAGE >= pages - 1;
-  markPlaying();           // la página nueva puede contener la pista en curso
-}
-
-function goSongsPage(delta) {
-  SONGS_PAGE += delta;
-  renderSongsPage();
-  $("#sub-songs").scrollIntoView({ block: "start", behavior: "smooth" });
-}
-
 // Portadas DIFERIDAS de verdad. Antes se pedía cover_uri() de todas las tarjetas
 // nada más pintar el grid, y cada llamada lee el fichero y lo pasa en base64 por
 // el puente: con una biblioteca grande son decenas de lecturas simultáneas para
@@ -1402,89 +888,50 @@ function lazyCover(el, coverPath) {
 
 async function fetchCover(el, coverPath) {
   if (!coverPath) return;
-  const uri = await window.pywebview.api.cover_uri(coverPath);
+  const uri = await coverUri(coverPath);
   if (uri) el.style.backgroundImage = `url(${uri})`;
 }
 
-function closeAlbumPage() {
-  $("#album-page").hidden = true;
-  $("#albums").hidden = false;
+// Caché de portadas en memoria (LRU con tope de tamaño). En las tablas muchas
+// filas comparten álbum: sin caché, cada fila pedía y transfería la misma
+// portada (~40 KB en base64). Peticiones simultáneas de la misma portada se
+// unen en una sola. Tope ~6 MB de texto (≈150 portadas); se vacía al escanear.
+const COVER_CACHE = new Map();
+const COVER_PENDING = new Map();
+const COVER_CACHE_MAX = 6 * 1024 * 1024;
+let COVER_CACHE_SIZE = 0;
+
+function coverUri(path) {
+  if (COVER_CACHE.has(path)) {
+    const uri = COVER_CACHE.get(path);
+    COVER_CACHE.delete(path);          // al final = usada hace poco
+    COVER_CACHE.set(path, uri);
+    return Promise.resolve(uri);
+  }
+  if (COVER_PENDING.has(path)) return COVER_PENDING.get(path);
+  const p = window.pywebview.api.cover_uri(path).then((uri) => {
+    COVER_PENDING.delete(path);
+    if (uri) {
+      COVER_CACHE.set(path, uri);
+      COVER_CACHE_SIZE += uri.length;
+      while (COVER_CACHE_SIZE > COVER_CACHE_MAX && COVER_CACHE.size > 1) {
+        const [k, v] = COVER_CACHE.entries().next().value;
+        COVER_CACHE.delete(k);
+        COVER_CACHE_SIZE -= v.length;
+      }
+    }
+    return uri;
+  }, () => {
+    COVER_PENDING.delete(path);
+    return null;
+  });
+  COVER_PENDING.set(path, p);
+  return p;
 }
 
-async function openAlbum(album) {
-  CURRENT_ALBUM = album;
-  // Asegurar que estamos en Biblioteca › Álbumes (puede llamarse desde el
-  // reproductor, la búsqueda o la página de artista).
-  switchView("biblioteca");
-  if (CURRENT_SUB !== "albums") switchSub("albums", false);
-
-  const tracks = await window.pywebview.api.album_tracks(album);
-
-  // Ficha derivada de las pistas: duración total, año, calidad.
-  const totalDur = tracks.reduce((s, t) => s + (t.duration || 0), 0);
-  const year = tracks.map((t) => t.date).find(Boolean) || "";
-  const allLossless = tracks.length > 0 && tracks.every((t) => t.lossless);
-  const artist = tracks.map((t) => t.album_artist).find(Boolean) ||
-    (new Set(tracks.map((t) => t.artist).filter(Boolean)).size > 1
-      ? "Varios artistas"
-      : tracks.map((t) => t.artist).find(Boolean) || "");
-  const meta = [
-    `${tracks.length} pista(s)`,
-    fmtDur(totalDur),
-    year,
-    allLossless ? "Lossless" : "",
-  ].filter(Boolean).join(" · ");
-
-  $("#albums").hidden = true;
-  $("#album-page").hidden = false;
-  $("#album-page-title").textContent = album || "(sin álbum)";
-  $("#album-page-artist").innerHTML = artist ? artistLink(artist) : "";
-  $("#album-page-meta").innerHTML = meta +
-    (allLossless ? ' <span class="badge-lossless">LOSSLESS</span>' : "");
-
-  const coverEl = $("#album-page-cover");
-  coverEl.style.backgroundImage = "";
-  const coverPath = tracks.map((t) => t.cover_path).find(Boolean);
-  if (coverPath) fetchCover(coverEl, coverPath);
-
-  $("#album-tracks").innerHTML = tracks
-    .map(
-      (t, i) =>
-        `<div class="track-row" data-i="${i}" data-track-id="${t.id}">
-           <span class="track-num">${t.track_number || i + 1}</span>
-           <span class="track-title">${escapeHtml(t.title || "")}</span>
-           <span class="track-dur hint">${fmtDur(t.duration)}</span>
-           ${plusBtn(t.id)}
-         </div>`
-    )
-    .join("");
-  markPlaying();
-  window.scrollTo(0, 0);
-
-  $("#btn-play-album").onclick = () => window.pywebview.api.play_album(album);
-  $("#btn-album-playlist").onclick = (e) =>
-    openPlaylistMenuForMany(e.currentTarget, tracks.map((t) => t.id), album || "");
-  $("#btn-shuffle-album").onclick = async () => {
-    const ids = tracks.map((t) => t.id);
-    // Reproduce el álbum en orden aleatorio (mismo criterio que artista).
-    await window.pywebview.api.play_ids(shuffled(ids), 0);
-  };
-  $("#btn-del-album").onclick = async () => {
-    const ok = await confirmDialog({
-      title: "Eliminar álbum",
-      msg: `Se enviarán a la Papelera de reciclaje las ${tracks.length} pista(s) de «${album || "(sin álbum)"}» y se quitarán de la biblioteca. ¿Continuar?`,
-    });
-    if (!ok) return;
-    const res = await window.pywebview.api.delete_album(album);
-    closeAlbumPage();
-    toast(res.ok ? `Álbum eliminado (${res.count} pista(s) a la Papelera).` : "No se pudo eliminar.", !res.ok);
-    refreshLibrary();
-  };
-  $("#album-tracks").querySelectorAll(".track-row").forEach((row) => {
-    row.addEventListener("dblclick", () =>
-      window.pywebview.api.play_album_from(album, parseInt(row.dataset.i))
-    );
-  });
+function clearCoverCache() {
+  COVER_CACHE.clear();
+  COVER_CACHE_SIZE = 0;
 }
 
 function shuffled(arr) {
@@ -1496,170 +943,166 @@ function shuffled(arr) {
   return a;
 }
 
-// --- Búsqueda ---------------------------------------------------------------
-// Los resultados van a su propio contenedor y las subvistas se ocultan con la
-// clase .searching, en vez de inyectar un panel dentro del grid de álbumes.
-
-function exitSearch() {
-  $("#view-biblioteca").classList.remove("searching");
-  $("#search-results").hidden = true;
-}
-
-async function doSearch(query) {
-  query = (query || "").trim();
-  if (!query) {
-    exitSearch();
-    return refreshLibrary();
-  }
-  const results = await window.pywebview.api.search_library(query);
-  const box = $("#search-results");
-  $("#view-biblioteca").classList.add("searching");
-  box.hidden = false;
-
-  const head =
-    `<div class="row inline search-head">
-       <strong>${results.length} resultado(s)</strong>
-       <span class="hint">para «${escapeHtml(query)}»</span>
-       <button id="btn-search-clear" class="secondary">Limpiar</button>
-     </div>`;
-
-  if (!results.length) {
-    box.innerHTML = head +
-      `<div class="hint empty">Nada coincide. Prueba con menos palabras.</div>`;
-    $("#btn-search-clear").addEventListener("click", clearSearch);
-    return;
-  }
-
-  // Álbumes y artistas se derivan de las pistas encontradas (sin más consultas).
-  const albums = [];
-  const seenAlb = new Set();
-  const artists = [];
-  const seenArt = new Set();
-  for (const t of results) {
-    const alb = t.album || "";
-    if (alb && !seenAlb.has(alb)) {
-      seenAlb.add(alb);
-      albums.push({ album: t.album, artist: t.album_artist || t.artist });
-    }
-    const art = t.album_artist || t.artist || "";
-    if (art && !seenArt.has(art)) {
-      seenArt.add(art);
-      artists.push(art);
-    }
-  }
-
-  let html = head;
-  if (albums.length) {
-    html += `<div class="search-group"><div class="search-label">Álbumes</div>` +
-      albums.map((a) =>
-        `<div class="track-row search-alb" data-album="${escapeHtml(a.album)}">
-           <i class="ph-bold ph-vinyl-record"></i>
-           <span class="track-title">${escapeHtml(a.album)}</span>
-           <span class="hint">${escapeHtml(a.artist || "")}</span>
-         </div>`).join("") + `</div>`;
-  }
-  if (artists.length) {
-    html += `<div class="search-group"><div class="search-label">Artistas</div>` +
-      artists.map((a) =>
-        `<div class="track-row">
-           <i class="ph-bold ph-user"></i>
-           <span class="track-title">${artistLink(a)}</span>
-         </div>`).join("") + `</div>`;
-  }
-  html += `<div class="search-group"><div class="search-label">Canciones</div>` +
-    results.map((t) =>
-      `<div class="track-row" data-track-id="${t.id}">
-         <span class="track-title">${escapeHtml(t.title || "")}</span>
-         ${artistLink(t.artist || t.album_artist)}
-         <span class="hint">${escapeHtml(t.album || "")}</span>
-         <span class="track-dur hint">${fmtDur(t.duration)}</span>
-         ${plusBtn(t.id)}
-       </div>`).join("") + `</div>`;
-
-  box.innerHTML = html;
-  markPlaying();
-  $("#btn-search-clear").addEventListener("click", clearSearch);
-  box.querySelectorAll(".search-alb").forEach((row) => {
-    row.addEventListener("click", () => {
-      $("#search").value = "";
-      exitSearch();                // openAlbum ya navega a Biblioteca › Álbumes
-      openAlbum(row.dataset.album);
-    });
-  });
-}
-
-function clearSearch() {
-  $("#search").value = "";
-  exitSearch();
-  refreshLibrary();
-}
-
 // ============ PARA TI ============
 // Las mezclas se calculan en el backend a partir de la propia biblioteca (género,
 // época, escuchas). Aquí solo se pintan y se conectan a reproducir / guardar.
+// El arte (estela del hero, motivos, títulos gigantes) vive en parati-art.js.
 
 let FY_MIXES = [];
+let FY_LAST_ALBUM = null;   // para «Retomar» cuando no hay nada cargado
+
+const fyActive = () => $("#view-parati").classList.contains("active");
 
 async function loadForYou() {
   const data = await window.pywebview.api.for_you();
   FY_MIXES = data.mixes || [];
-  const st = data.stats || {};
-
-  $("#fy-hero-num").textContent = st.plays ? String(st.plays) : "";
-  const bits = [];
-  if (st.tracks) bits.push(`${st.tracks} pistas`);
-  if (st.albums) bits.push(`${st.albums} álbumes`);
-  if (st.plays) bits.push(`${st.plays} reproducciones`);
-  $("#fy-stats").innerHTML =
-    bits.map((b) => `<span class="fy-stat">${escapeHtml(b)}</span>`).join("") +
-    (st.top ? `<span class="fy-stat fy-top">Tu #1: ${escapeHtml(st.top.title || "")}
-       <em>${escapeHtml(st.top.artist || "")}</em> · ${st.top.play_count}×</span>` : "");
+  const strips = data.strips || {};
 
   // Soltar SOLO los nodos de esta pantalla (nunca el observer entero: otras
   // vistas pueden estar cargando sus portadas al mismo tiempo).
   ["#fy-strip-artists", "#fy-strip-albums", "#fy-strip-added", "#fy-grid"]
     .forEach((sel) => releaseCovers($(sel)));
-  renderStrips(data.strips || {});
 
-  const grid = $("#fy-grid");
+  renderHero(data.stats || {}, strips);
+  renderStrips(strips);
+  renderMixes();
+
   const empty = $("#fy-empty");
   empty.hidden = FY_MIXES.length > 0;
   empty.querySelectorAll("[data-go]").forEach((b) => {
     b.onclick = () => switchView(b.dataset.go);
   });
-  $("#fy-mixes-title").hidden = FY_MIXES.length === 0;
-  grid.innerHTML = FY_MIXES.map(fyCard).join("");
+}
 
-  // Portadas diferidas, igual que en el resto de la app (el observer ya se
-  // reinició arriba, antes de pintar las tiras).
-  grid.querySelectorAll(".fy-cover").forEach((el) => {
-    if (el.dataset.cover) lazyCover(el, el.dataset.cover);
-  });
+// --- Hero ----------------------------------------------------------------------
 
-  grid.querySelectorAll(".fy-card").forEach((card) => {
-    const mix = FY_MIXES.find((m) => m.key === card.dataset.key);
-    if (!mix) return;
-    card.querySelector(".fy-play").addEventListener("click", async (e) => {
-      e.stopPropagation();
-      const res = await window.pywebview.api.play_ids(mix.track_ids, 0);
-      if (res && res.ok) toast(`Sonando: ${mix.title}`);
-    });
-    card.querySelector(".fy-save").addEventListener("click", (e) => {
-      e.stopPropagation();
-      openPlaylistMenuForMany(e.currentTarget, mix.track_ids, mix.title);
-    });
-    card.addEventListener("click", () => window.pywebview.api.play_ids(mix.track_ids, 0));
+function renderHero(st, strips) {
+  const art = window.ForYouArt;
+  $("#fy-hero-num").textContent = st.plays ? String(st.plays) : "";
+  const cal = art.calendar();
+  $("#fy-date").textContent = cal.date;
+  $("#fy-phase").textContent = cal.phase;
+
+  const stat = (n, label) => (n ? `<div class="fy-stat"><b>${n}</b><small>${label}</small></div>` : "");
+  $("#fy-stats").innerHTML =
+    stat(st.tracks, "pistas") + stat(st.albums, "álbumes") + stat(st.plays, "reproducciones");
+
+  // Tu #1: su carátula en duotono; pulsarlo lo reproduce y lleva al reproductor.
+  const anchor = $("#fy-anchor");
+  const top = st.top;
+  anchor.hidden = !top;
+  if (top) {
+    $("#fy-anchor-tag").textContent = `TU #1 · ${top.play_count}×`;
+    $("#fy-anchor-title").textContent = top.title || "—";
+    $("#fy-anchor-artist").textContent = top.artist || "";
+    const img = $("#fy-anchor-img");
+    img.style.backgroundImage = "";
+    if (top.cover_path) fetchCover(img, top.cover_path);
+    anchor.onclick = () => {
+      if (top.id == null) return;
+      window.pywebview.api.play_track(top.id);
+      switchView("reproduciendo");
+    };
+  }
+
+  FY_LAST_ALBUM = (strips.albums && strips.albums[0] && strips.albums[0].album) || null;
+  renderResume();
+
+  // La estela nace en tu #1: se mide cuando el hero ya está maquetado.
+  requestAnimationFrame(() => {
+    art.buildShards($("#fy-shards-box"), $("#fy-shards"), anchor, true);
+    art.animateHero($("#fy-kinetic"),
+      [$("#fy-eyebrow"), anchor.hidden ? null : anchor, $("#fy-stats-box")]);
   });
 }
 
-// --- Tiras de recientes ------------------------------------------------------
-// Cada tipo tiene su propia forma: artistas en retratos circulares, álbumes en
-// estantería inclinada. Así la pantalla respira en vez de ser una rejilla uniforme.
+// «Continuar» con lo que suena (progreso real) o «Retomar» tu último álbum.
+// La app no guarda la posición entre sesiones, así que no se inventa.
+function renderResume() {
+  const btn = $("#fy-resume");
+  if (HAS_TRACK && CURRENT_TRACK) {
+    btn.hidden = false;
+    btn.dataset.mode = "continue";
+    $("#fy-resume-kick").textContent = `Continuar · ${fmtDur(LAST_POS)} / ${fmtDur(NP_DURATION)}`;
+    $("#fy-resume-title").textContent = CURRENT_TRACK.title || "—";
+    $("#fy-resume-bar").hidden = false;
+    $("#fy-resume-bar span").style.width =
+      (NP_DURATION ? Math.min(100, (LAST_POS / NP_DURATION) * 100) : 0) + "%";
+  } else if (RESUME) {
+    // Sesión anterior en pausa: mismo modo «continue» (el play la retoma).
+    const t = RESUME.track, dur = t.duration || 0;
+    btn.hidden = false;
+    btn.dataset.mode = "continue";
+    $("#fy-resume-kick").textContent = `Continuar · ${fmtDur(RESUME.position)} / ${fmtDur(dur)}`;
+    $("#fy-resume-title").textContent = t.title || "—";
+    $("#fy-resume-bar").hidden = false;
+    $("#fy-resume-bar span").style.width = (dur ? Math.min(100, (RESUME.position / dur) * 100) : 0) + "%";
+  } else if (FY_LAST_ALBUM) {
+    btn.hidden = false;
+    btn.dataset.mode = "album";
+    $("#fy-resume-kick").textContent = "Retomar · último álbum";
+    $("#fy-resume-title").textContent = FY_LAST_ALBUM;
+    $("#fy-resume-bar").hidden = true;
+  } else {
+    btn.hidden = true;
+  }
+}
+
+$("#fy-resume").addEventListener("click", () => {
+  if ($("#fy-resume").dataset.mode === "continue") {
+    if (!PLAYING) window.pywebview.api.player_toggle();
+  } else if (FY_LAST_ALBUM) {
+    window.pywebview.api.play_album(FY_LAST_ALBUM);
+  }
+  switchView("reproduciendo");
+});
+
+// Al redimensionar: la estela y los títulos gigantes dependen del ancho.
+let FY_RESIZE = 0;
+window.addEventListener("resize", () => {
+  clearTimeout(FY_RESIZE);
+  FY_RESIZE = setTimeout(() => {
+    if (!fyActive()) return;
+    window.ForYouArt.buildShards($("#fy-shards-box"), $("#fy-shards"), $("#fy-anchor"), false);
+    window.ForYouArt.fitGiants($("#fy-grid"));
+  }, 150);
+});
+
+// --- Clic / doble clic ---------------------------------------------------------
+// Un clic abre; un doble clic reproduce y lleva a Reproduciendo. Para distinguirlos
+// el clic simple espera ~250 ms (si llega el segundo clic, se cancela). Con
+// teclado (detail 0) no hay doble clic posible: se abre al instante.
+function clickOrDouble(el, onClick, onDouble) {
+  let t = 0;
+  el.addEventListener("click", (e) => {
+    if (e.target.closest(".fy-alb-play")) return;
+    if (e.detail === 0) return onClick();
+    if (e.detail > 1) return;
+    clearTimeout(t);
+    t = setTimeout(onClick, 250);
+  });
+  el.addEventListener("dblclick", (e) => {
+    if (e.target.closest(".fy-alb-play")) return;
+    clearTimeout(t);
+    onDouble();
+  });
+}
+
+const playAndShow = (fn) => {
+  fn();
+  switchView("reproduciendo");
+};
+
+// --- Tiras de recientes --------------------------------------------------------
+// Cada tipo tiene su propia forma: retratos sobre placa diagonal, fundas con el
+// vinilo dentro y un registro de entradas.
+
+const FY_ADDED_MAX = 9;   // el registro se lee en 3 columnas de 3
 
 function renderStrips(strips) {
   renderArtistRail($("#fy-strip-artists"), strips.artists || []);
-  renderShelf($("#fy-strip-albums"), strips.albums || [], "albums");
-  renderShelf($("#fy-strip-added"), strips.added || [], "added");
+  renderShelf($("#fy-strip-albums"), strips.albums || []);
+  renderAddedLog($("#fy-strip-added"), (strips.added || []).slice(0, FY_ADDED_MAX));
 }
 
 function renderArtistRail(section, artists) {
@@ -1668,67 +1111,158 @@ function renderArtistRail(section, artists) {
   const rail = section.querySelector(".fy-rail");
   rail.innerHTML = artists
     .map(
-      (a, i) => `<button class="fy-artist" data-artist="${escapeHtml(a.name || "")}" style="--i:${i}">
-          <span class="fy-portrait"><span class="fy-portrait-img" data-cover="${escapeHtml(a.cover_path || "")}"></span></span>
-          <span class="fy-artist-name">${escapeHtml(a.name || "(sin artista)")}</span>
-          <span class="fy-artist-meta">${a.plays}× · ${a.tracks} pistas</span>
+      (a, i) => `<button class="fy-artist" data-artist="${escapeHtml(a.name || "")}" style="--i:${i}"
+                   title="Clic: abrir · Doble clic: reproducir">
+          <span class="fy-plate"></span>
+          <span class="fy-portrait" data-cover="${escapeHtml(a.cover_path || "")}"></span>
+          <b>${escapeHtml(a.name || "(sin artista)")}</b>
+          <small>${a.plays}× · ${a.tracks} pistas</small>
         </button>`
     )
     .join("");
   rail.querySelectorAll(".fy-artist").forEach((el) => {
-    lazyCover(el.querySelector(".fy-portrait-img"), el.querySelector(".fy-portrait-img").dataset.cover);
-    el.addEventListener("click", () => openArtist(el.dataset.artist || null));
+    const pic = el.querySelector(".fy-portrait");
+    lazyCover(pic, pic.dataset.cover);
+    const name = el.dataset.artist || null;
+    clickOrDouble(el, () => openArtist(name),
+      () => playAndShow(() => window.pywebview.api.play_artist(name, false)));
   });
 }
 
-function renderShelf(section, albums, kind) {
+function renderShelf(section, albums) {
   section.hidden = albums.length === 0;
   if (!albums.length) return;
   const rail = section.querySelector(".fy-rail");
   rail.innerHTML = albums
     .map(
-      (a, i) => `<article class="fy-disc" data-album="${escapeHtml(a.album || "")}" style="--i:${i}">
-          <span class="fy-disc-art" data-cover="${escapeHtml(a.cover_path || "")}">
-            <button class="fy-disc-play" title="Reproducir álbum"><i class="ph-bold ph-play"></i></button>
+      (a, i) => `<div class="fy-alb" role="button" tabindex="0" data-album="${escapeHtml(a.album || "")}" style="--i:${i}"
+                   title="Clic: abrir · Doble clic: reproducir">
+          <span class="fy-sl">
+            <span class="fy-vin"><span class="fy-vin-label" data-cover="${escapeHtml(a.cover_path || "")}"></span></span>
+            <span class="fy-sleeve" data-cover="${escapeHtml(a.cover_path || "")}"></span>
+            <button class="fy-alb-play" title="Reproducir álbum"><i class="ph-bold ph-play"></i></button>
           </span>
-          <span class="fy-disc-name">${escapeHtml(a.album || "(sin álbum)")}</span>
-          <span class="fy-disc-meta">${escapeHtml(a.artist || "")} · ${a.tracks} pistas</span>
-        </article>`
+          <span class="fy-alb-txt"><b>${escapeHtml(a.album || "(sin álbum)")}</b>
+            <small>${escapeHtml(a.artist || "")} · ${a.tracks} ${a.tracks === 1 ? "pista" : "pistas"}</small></span>
+        </div>`
     )
     .join("");
-  rail.querySelectorAll(".fy-disc").forEach((el) => {
-    const art = el.querySelector(".fy-disc-art");
-    lazyCover(art, art.dataset.cover);
-    el.addEventListener("click", () => openAlbum(el.dataset.album || null));
-    el.querySelector(".fy-disc-play").addEventListener("click", (e) => {
+  rail.querySelectorAll(".fy-alb").forEach((el) => {
+    el.querySelectorAll("[data-cover]").forEach((c) => lazyCover(c, c.dataset.cover));
+    const album = el.dataset.album || null;
+    clickOrDouble(el, () => openAlbum(album),
+      () => playAndShow(() => window.pywebview.api.play_album(album)));
+    el.addEventListener("keydown", (e) => {
+      if (e.target !== el || (e.key !== "Enter" && e.key !== " ")) return;
+      e.preventDefault();
       e.stopPropagation();
-      window.pywebview.api.play_album(el.dataset.album || null);
-      toast(`Sonando: ${el.dataset.album}`);
+      openAlbum(album);
+    });
+    // Botón de play: reproduce sin salir de «Para ti» (como hasta ahora).
+    el.querySelector(".fy-alb-play").addEventListener("click", (e) => {
+      e.stopPropagation();
+      window.pywebview.api.play_album(album);
+      toast(`Sonando: ${album}`);
     });
   });
 }
 
-// Tarjeta con el lenguaje Tanatos: corte diagonal, tipografía display recortada y
-// color alterno voltage/crimson. La primera ocupa el doble (rejilla asimétrica).
-function fyCard(m, i) {
-  const tone = i % 3 === 1 ? "crim" : "volt";
-  const big = i === 0 ? " fy-big" : "";
-  return `<article class="fy-card fy-${tone}${big}" data-key="${escapeHtml(m.key)}"
-            style="--i:${i}">
-      <div class="fy-cover" data-cover="${escapeHtml(m.cover_path || "")}"></div>
-      <div class="fy-shade"></div>
-      <div class="fy-body">
-        <div class="fy-kind">${fyKindLabel(m.kind)}</div>
-        <h3 class="fy-name">${escapeHtml(m.title)}</h3>
-        <div class="fy-sub">${escapeHtml(m.subtitle || "")}</div>
-      </div>
-      <div class="fy-foot">
-        <span class="fy-count">${m.count}<small>${m.total > m.count ? " / " + m.total : ""} pistas</small></span>
-        <span class="fy-actions">
-          <button class="fy-play" title="Reproducir la mezcla"><i class="ph-bold ph-play"></i></button>
-          <button class="fy-save" title="Guardar como playlist"><i class="ph-bold ph-plus"></i></button>
-        </span>
-      </div>
+// Etiqueta de fecha del registro: NUEVO (hoy), AYER, día de la semana o dd/mm.
+function addedChip(ts) {
+  if (!ts) return { text: "", isNew: false };
+  const day = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const d = new Date(ts * 1000);
+  const diff = Math.round((day(new Date()) - day(d)) / 86400000);
+  if (diff <= 0) return { text: "NUEVO", isNew: true };
+  if (diff === 1) return { text: "AYER", isNew: false };
+  if (diff < 7) return { text: ["DOM", "LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB"][d.getDay()] + ".", isNew: false };
+  return { text: `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`, isNew: false };
+}
+
+function renderAddedLog(section, albums) {
+  section.hidden = albums.length === 0;
+  if (!albums.length) return;
+  const log = section.querySelector(".fy-log");
+  log.innerHTML = albums
+    .map((a, i) => {
+      const chip = addedChip(a.added);
+      return `<button class="fy-row" data-album="${escapeHtml(a.album || "")}" style="--i:${i}"
+                title="Clic: abrir · Doble clic: reproducir">
+          <span class="fy-ix">${String(i + 1).padStart(2, "0")}</span>
+          <span class="fy-thumb" data-cover="${escapeHtml(a.cover_path || "")}"></span>
+          <span class="fy-row-t"><b>${escapeHtml(a.album || "(sin álbum)")}</b>
+            <small>${escapeHtml(a.artist || "")} · ${a.tracks} ${a.tracks === 1 ? "pista" : "pistas"}</small></span>
+          ${chip.text ? `<span class="fy-chip${chip.isNew ? " new" : ""}">${chip.text}</span>` : ""}
+        </button>`;
+    })
+    .join("");
+  log.querySelectorAll(".fy-row").forEach((el) => {
+    const thumb = el.querySelector(".fy-thumb");
+    lazyCover(thumb, thumb.dataset.cover);
+    const album = el.dataset.album || null;
+    clickOrDouble(el, () => openAlbum(album),
+      () => playAndShow(() => window.pywebview.api.play_album(album)));
+  });
+}
+
+// --- Tus mezclas: pósteres ------------------------------------------------------
+// Tono de la rampa voltage + la primera pista de la mezcla al fondo (duotono, con
+// el corte diagonal de siempre) + un motivo propio de cada tipo, animado al pasar
+// por encima, + el título gigante ajustado al ancho de la tarjeta.
+
+function renderMixes() {
+  const art = window.ForYouArt;
+  const sec = $("#fy-mixes-sec");
+  const grid = $("#fy-grid");
+  sec.hidden = FY_MIXES.length === 0;
+  const list = art.styleMixes(FY_MIXES);
+  grid.innerHTML = list.map(fyPoster).join("");
+  grid.querySelectorAll(".fy-mix-cover").forEach((el) => lazyCover(el, el.dataset.cover));
+
+  grid.querySelectorAll(".fy-mix").forEach((card) => {
+    const mix = FY_MIXES.find((m) => m.key === card.dataset.key);
+    if (!mix) return;
+    const play = async () => {
+      const res = await window.pywebview.api.play_ids(mix.track_ids, 0);
+      if (res && res.ok) toast(`Sonando: ${mix.title}`);
+    };
+    card.querySelector(".fy-play").addEventListener("click", (e) => {
+      e.stopPropagation();
+      play();
+    });
+    card.querySelector(".fy-save").addEventListener("click", (e) => {
+      e.stopPropagation();
+      openPlaylistMenuForMany(e.currentTarget, mix.track_ids, mix.title);
+    });
+    card.addEventListener("click", play);
+    card.addEventListener("keydown", (e) => {
+      if (e.target !== card || (e.key !== "Enter" && e.key !== " ")) return;
+      e.preventDefault();
+      e.stopPropagation();
+      play();
+    });
+  });
+  // El ajuste mide el texto: hace falta la tipografía ya cargada.
+  (document.fonts ? document.fonts.ready : Promise.resolve()).then(() => art.fitGiants(grid));
+}
+
+function fyPoster(m, i) {
+  const art = window.ForYouArt;
+  const style = `--i:${i};--bg:var(${m.tone})` + (m.light ? ";--fg:var(--ink-100)" : "");
+  const of = m.total > m.count ? `/ ${m.total} pistas` : "pistas";
+  return `<article class="fy-mix m-${m.motif} ${m.cls}${m.light ? " light" : ""}" data-key="${escapeHtml(m.key)}"
+            style="${style}" role="button" tabindex="0" aria-label="${escapeHtml(m.title)}, ${m.count} pistas">
+      <div class="fy-mix-cover" data-cover="${escapeHtml(m.cover_path || "")}"></div>
+      <svg class="motif" viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${art.motif(m.motif, art.hash(m.title))}</svg>
+      <span class="sweep" aria-hidden="true"></span>
+      <span class="kick"><i></i>${fyKindLabel(m.kind)}</span>
+      <span class="desc">${escapeHtml(m.subtitle || "")}</span>
+      <span class="count"><b>${m.count}</b><small>${of}</small></span>
+      <span class="giant">${escapeHtml(m.title)}</span>
+      <span class="acts">
+        <button class="fy-play" title="Reproducir la mezcla"><i class="ph-bold ph-play"></i></button>
+        <button class="fy-save" title="Guardar como playlist"><i class="ph-bold ph-plus"></i></button>
+      </span>
     </article>`;
 }
 
@@ -1739,6 +1273,7 @@ function fyKindLabel(kind) {
     fresh: "Rescate",
     decade: "Cápsula del tiempo",
     revisit: "Vuelve a…",
+    smart: "Tu inteligente",   // playlists inteligentes marcadas «Mostrar en Para ti»
   }[kind] || "Mezcla";
 }
 
@@ -1747,6 +1282,8 @@ let NP_DURATION = 0;
 let seeking = false;
 
 function wirePlayer() {
+  // Escena del tocadiscos: pulsarla equivale al botón de reproducir/pausa.
+  window.NowStage.init({ onToggle: () => window.pywebview.api.player_toggle() });
   $("#np-play").addEventListener("click", () => window.pywebview.api.player_toggle());
   $("#np-next").addEventListener("click", () => window.pywebview.api.player_next());
   $("#np-prev").addEventListener("click", () => window.pywebview.api.player_prev());
@@ -1759,11 +1296,13 @@ function wirePlayer() {
   );
   $("#rg-preamp").addEventListener("input", (e) => {
     $("#rg-preamp-val").textContent = "+" + e.target.value + " dB";
+    paintRange(e.target);
   });
   $("#rg-preamp").addEventListener("change", (e) =>
     window.pywebview.api.set_replaygain(null, parseFloat(e.target.value))
   );
   $("#np-seek").addEventListener("mousedown", () => (seeking = true));
+  $("#np-seek").addEventListener("input", (e) => paintRange(e.target));
   $("#np-seek").addEventListener("change", (e) => {
     seeking = false;
     window.pywebview.api.player_seek((e.target.value / 100) * NP_DURATION);
@@ -1783,13 +1322,27 @@ function wirePlayer() {
     $("#np-repeat").innerHTML = ri === 2 ? '<i class="ph-bold ph-repeat-once"></i>' : '<i class="ph-bold ph-repeat"></i>';
     window.pywebview.api.player_repeat(repeatModes[ri]);
   });
+  // Al retomar una sesión el backend restaura aleatorio, repetir y volumen: los
+  // botones (cuyo estado vive en estas variables locales) se ponen al día.
+  window.hub.on("player:modes", (m) => {
+    shuffleOn = !!m.shuffle;
+    $("#np-shuffle").classList.toggle("on", shuffleOn);
+    ri = Math.max(0, repeatModes.indexOf(m.repeat));
+    $("#np-repeat").classList.toggle("on", ri !== 0);
+    $("#np-repeat").innerHTML = ri === 2 ? '<i class="ph-bold ph-repeat-once"></i>' : '<i class="ph-bold ph-repeat"></i>';
+    if (typeof m.volume === "number") syncVolumeUi(m.volume);
+  });
 
   window.hub.on("player:track", async (p) => {
     const t = p.track;
     CURRENT_TRACK = t;
-    $("#np-title").textContent = t.title || "—";
-    $("#np-artist").innerHTML = t.artist ? artistLink(t.artist) : "";
-    $("#np-album").textContent = t.album || "";
+    // Título/artista/álbum: la escena decide el momento (tras la franja diagonal
+    // si la vista está visible; al instante si no).
+    const paintMeta = () => {
+      $("#np-title").textContent = t.title || "—";
+      $("#np-artist").innerHTML = t.artist ? artistLink(t.artist) : "";
+      $("#np-album").textContent = t.album || "";
+    };
     // Ficha técnica: codec, sample rate, profundidad, bitrate, lossless.
     const specs = [];
     if (t.codec) specs.push(t.codec.toUpperCase());
@@ -1798,16 +1351,19 @@ function wirePlayer() {
     if (t.bit_rate) specs.push(Math.round(t.bit_rate / 1000) + " kbps");
     specs.push(t.lossless ? "lossless" : "lossy");
     $("#np-specs").textContent = specs.join(" · ");
-    const uri = t.cover_path ? await window.pywebview.api.cover_uri(t.cover_path) : null;
-    $("#np-cover").src = uri || "";
+    const uri = t.cover_path ? await coverUri(t.cover_path) : null;
+    window.NowStage.setTrack(t, uri, p.index, paintMeta);
+    if (fyActive()) renderResume();
     // Barra global + vecinos + resaltado en las listas.
     showMini(t, uri);
     renderNeighbours(p);
     markPlaying();
     refreshOpenQueue();   // la Cola (flotante o integrada) sigue el cambio de pista
     refreshSignalPath();
-    if (!$("#lyrics-panel").hidden) loadLyrics();
-    $("#spectrum-panel").hidden = true;
+    if (NP_TAB === "lyrics-panel") loadLyrics();
+    // El espectro es de la pista anterior: se ofrece analizar la nueva (es costoso).
+    if (NP_TAB === "spectrum-panel") spectrumPrompt();
+    else $("#spectrum-panel").innerHTML = "";
   });
   window.hub.on("player:position", (p) => {
     if (typeof p.duration === "number") {
@@ -1827,9 +1383,13 @@ function wirePlayer() {
       }
       const pct = NP_DURATION ? (p.position / NP_DURATION) * 100 : 0;
       $("#np-seek").value = pct;
+      paintRange($("#np-seek"));
       $("#mini-fill").style.width = pct + "%";
       highlightLyric(p.position);
     }
+    // El brazo del tocadiscos avanza con la pista.
+    window.NowStage.setPosition(p.position, p.duration);
+    if (fyActive()) renderResume();   // «Continuar» de Para ti con el progreso real
   });
   window.hub.on("player:state", (p) => renderPlayState(!!p.playing));
   window.hub.on("player:neighbours", renderNeighbours);
@@ -1839,6 +1399,28 @@ function wirePlayer() {
   window.hub.on("player:device-missing", (p) => {
     toast("El dispositivo de audio elegido ya no está disponible. Se usa el " +
           "predeterminado del sistema; puedes elegir otro en Ajustes.", true);
+  });
+  // Dispositivo ocupado en exclusiva por otra app. mpv repite el error mientras
+  // dure (el backend lo agrupa cada 5 s), así que la franja se oculta sola cuando
+  // deja de llegar: señal de que el dispositivo se liberó y vuelve a sonar.
+  // Cerrarla a mano la silencia hasta que termine ESE bloqueo (no reaparece a los 5 s).
+  let busyTimer = 0, busyMuted = false;
+  window.hub.on("player:device-busy", () => {
+    if (!busyMuted) $("#device-banner").hidden = false;
+    clearTimeout(busyTimer);
+    busyTimer = setTimeout(() => {
+      $("#device-banner").hidden = true;
+      busyMuted = false;
+    }, 12000);
+  });
+  $("#btn-device-dismiss").addEventListener("click", () => {
+    $("#device-banner").hidden = true;
+    busyMuted = true;
+  });
+  $("#btn-device-pick").addEventListener("click", () => {
+    $("#device-banner").hidden = true;
+    switchView("ajustes");
+    $("#cfg-device").focus();
   });
 
   wireMini();
@@ -1858,7 +1440,8 @@ function renderPlayState(playing) {
     : '<i class="ph-bold ph-play"></i>';
   $("#np-play").innerHTML = icon;
   $("#mini-play").innerHTML = icon;
-  document.querySelectorAll(".track-row.playing").forEach((r) =>
+  window.NowStage.setPlaying(playing);   // brazo arriba/abajo y giro del disco
+  document.querySelectorAll(".lb-tr.playing").forEach((r) =>
     r.classList.toggle("paused", !playing)
   );
 }
@@ -1878,11 +1461,37 @@ function showMini(t, coverUri) {
 function updateMiniVisibility() {
   const active = document.querySelector(".view.active");
   const inPlayer = active && active.id === "view-reproduciendo";
-  const show = HAS_TRACK && !inPlayer;
+  const show = (HAS_TRACK || RESUME) && !inPlayer;
   $("#miniplayer").hidden = !show;
   document.body.classList.toggle("has-mini", show);
   if (!show) toggleQueue(false);   // no dejar la cola flotante abierta sin barra
 }
+
+// --- Sesión anterior, preparada en pausa ---------------------------------------
+// Al abrir la app, la barra global y el «Continuar» de Para ti muestran dónde se
+// quedó la escucha. Pedirla NO arranca libmpv: el backend solo lee el JSON y una
+// fila. Cualquier play (botones, Espacio, teclas multimedia) la retoma en el
+// backend (player_toggle), así que aquí no hace falta tocar esos botones.
+let RESUME = null;   // {track, position, volume…} hasta que suene algo
+
+async function loadSavedSession() {
+  const s = await window.pywebview.api.saved_session();
+  if (!s || !s.ok || HAS_TRACK) return;
+  RESUME = s;
+  const t = s.track;
+  $("#mini-title").textContent = t.title || "—";
+  $("#mini-artist").textContent = [t.artist, t.album].filter(Boolean).join(" — ");
+  $("#mini-cover").src = t.cover_path ? (await coverUri(t.cover_path)) || "" : "";
+  $("#mini-cur").textContent = fmtDur(s.position);
+  $("#mini-dur").textContent = fmtDur(t.duration);
+  $("#mini-fill").style.width = (t.duration ? Math.min(100, (s.position / t.duration) * 100) : 0) + "%";
+  if (typeof s.volume === "number") syncVolumeUi(s.volume);
+  updateMiniVisibility();
+  if (fyActive()) renderResume();
+}
+
+// En cuanto suena algo de verdad, la vista previa deja paso al estado real.
+window.hub.on("player:track", () => (RESUME = null));
 
 function renderNeighbours(p) {
   const set = (btn, data) => {
@@ -1904,7 +1513,7 @@ function markPlaying() {
   const id = CURRENT_TRACK && CURRENT_TRACK.id != null ? String(CURRENT_TRACK.id) : null;
   // Limpiar la marca anterior restaurando el número de pista original: las barras
   // del ecualizador SUSTITUYEN ese contenido, así que hay que guardarlo antes.
-  document.querySelectorAll(".track-row.playing").forEach((r) => {
+  document.querySelectorAll(".lb-tr.playing").forEach((r) => {
     r.classList.remove("playing", "paused");
     const num = r.querySelector(".track-num");
     if (num && num.dataset.orig !== undefined) {
@@ -1913,7 +1522,7 @@ function markPlaying() {
     }
   });
   if (id === null) return;
-  document.querySelectorAll('.track-row[data-track-id="' + id + '"]').forEach((r) => {
+  document.querySelectorAll('.lb-tr[data-track-id="' + id + '"]').forEach((r) => {
     r.classList.add("playing");
     r.classList.toggle("paused", !PLAYING);
     const num = r.querySelector(".track-num");
@@ -1926,7 +1535,7 @@ function markPlaying() {
 
 // --- Cola --------------------------------------------------------------------
 // Dos presentaciones de la MISMA cola:
-//  - En Reproduciendo: panel EN EL FLUJO (#queue-inline), como Letras/EQ. No tapa.
+//  - En Reproduciendo: la pestaña «Cola» (#queue-inline), en el flujo. No tapa.
 //  - En el resto de vistas: panel FLOTANTE (#queue-panel), superposición rápida.
 // El contexto lo decide inQueueView().
 
@@ -1935,27 +1544,19 @@ function inQueueView() {
   return active && active.id === "view-reproduciendo";
 }
 
-function queueTarget() {
-  return inQueueView()
-    ? { panel: $("#queue-inline"), list: $("#qi-list"), count: $("#qi-count") }
-    : { panel: $("#queue-panel"), list: $("#q-list"), count: $("#q-count") };
-}
-
 async function toggleQueue(force) {
-  // Cerrar cualquiera de los dos si se pide ocultar.
+  // Ocultar = solo el flotante: la cola del reproductor es una pestaña fija.
   if (force === false) {
     $("#queue-panel").hidden = true;
-    $("#queue-inline").hidden = true;
     return;
   }
-  const t = queueTarget();
-  const show = force !== undefined ? force : t.panel.hidden;
-  // Solo un panel de cola visible a la vez.
-  $("#queue-panel").hidden = true;
-  $("#queue-inline").hidden = true;
+  if (inQueueView()) return selectNpTab("queue-inline");
+  const panel = $("#queue-panel");
+  const show = force !== undefined ? force : panel.hidden;
+  panel.hidden = true;
   if (!show) return;
-  await renderQueueInto(t.list, t.count);
-  t.panel.hidden = false;
+  await renderQueueInto($("#q-list"), $("#q-count"));
+  panel.hidden = false;
 }
 
 // Refresca el panel de cola que esté abierto (al cambiar de pista).
@@ -1964,35 +1565,107 @@ function refreshOpenQueue() {
   if (!$("#queue-panel").hidden) renderQueueInto($("#q-list"), $("#q-count"));
 }
 
+// Fila compacta del panel flotante.
+function queueRow(t, i, idx) {
+  return `<div class="q-row ${i === idx ? "now" : i < idx ? "past" : ""}" data-qi="${i}" draggable="true">
+            <span class="q-num">${i === idx ? '<i class="ph-bold ph-speaker-high"></i>' : i + 1}</span>
+            <span class="q-meta">
+              <span class="q-title">${escapeHtml(t.title || "")}</span>
+              <span class="q-artist">${escapeHtml(t.artist || "")}</span>
+            </span>
+            <span class="q-dur">${fmtDur(t.duration)}</span>
+          </div>`;
+}
+
+// Fila del reproductor (diseño HUD): número en rombo, >>>, miniatura y duración.
+function queueItem(t, i, idx) {
+  const sub = [t.artist, t.album].filter(Boolean).join(" · ");
+  return `<div class="np-qitem ${i === idx ? "now" : i < idx ? "past" : ""}" data-qi="${i}" role="listitem" draggable="true">
+            <span class="np-tag"><span>${String(i + 1).padStart(2, "0")}</span></span>
+            <span class="np-chev">&gt;&gt;&gt;</span>
+            <span class="np-qthumb" data-cover="${escapeHtml(t.cover_path || "")}"></span>
+            <span class="np-qmeta"><b>${escapeHtml(t.title || "")}</b><small>${escapeHtml(sub)}</small></span>
+            <span class="np-qdur">${fmtDur(t.duration)}</span>
+          </div>`;
+}
+
 async function renderQueueInto(listEl, countEl) {
   const q = await window.pywebview.api.player_queue();
   const list = q.queue || [];
   const idx = typeof q.index === "number" ? q.index : -1;
+  const rich = listEl.id === "qi-list";
   countEl.textContent = list.length ? `${idx + 1} de ${list.length}` : "vacía";
+  releaseCovers(listEl);
   listEl.innerHTML = list.length
-    ? list
-        .map(
-          (t, i) =>
-            `<div class="q-row ${i === idx ? "now" : i < idx ? "past" : ""}" data-qi="${i}">
-               <span class="q-num">${i === idx ? '<i class="ph-bold ph-speaker-high"></i>' : i + 1}</span>
-               <span class="q-meta">
-                 <span class="q-title">${escapeHtml(t.title || "")}</span>
-                 <span class="q-artist">${escapeHtml(t.artist || "")}</span>
-               </span>
-               <span class="q-dur">${fmtDur(t.duration)}</span>
-             </div>`
-        )
-        .join("")
+    ? list.map((t, i) => (rich ? queueItem(t, i, idx) : queueRow(t, i, idx))).join("")
     : `<div class="hint empty">No hay nada en la cola. Reproduce un álbum o una playlist.</div>`;
+  if (rich) listEl.querySelectorAll(".np-qthumb").forEach((el) => lazyCover(el, el.dataset.cover));
 
-  listEl.querySelectorAll(".q-row").forEach((row) => {
+  listEl.querySelectorAll("[data-qi]").forEach((row) => {
     row.addEventListener("click", async () => {
       await window.pywebview.api.player_play_index(parseInt(row.dataset.qi));
       setTimeout(refreshOpenQueue, 600);
     });
   });
-  const now = listEl.querySelector(".q-row.now");
-  if (now) now.scrollIntoView({ block: "nearest" });
+  // Centrar la pista en curso DENTRO de la lista (scrollIntoView movería la página
+  // entera, y en el reproductor la cola está siempre a la vista).
+  const now = listEl.querySelector(".now");
+  if (now) {
+    const off = now.getBoundingClientRect().top - listEl.getBoundingClientRect().top;
+    listEl.scrollTop += off - (listEl.clientHeight - now.offsetHeight) / 2;
+  }
+}
+
+// Reordenar la cola arrastrando. Listeners DELEGADOS en la lista (sobreviven a cada
+// repintado, una sola vez por lista). Durante el arrastre solo se tocan clases si
+// cambia la fila de destino: dragover llega decenas de veces por segundo.
+function wireQueueDrag(listEl, countEl) {
+  let src = -1, mark = null, after = false;
+  const unmark = () => {
+    if (mark) mark.classList.remove("drop-before", "drop-after");
+    mark = null;
+  };
+  listEl.addEventListener("dragstart", (e) => {
+    const row = e.target.closest("[data-qi]");
+    if (!row) return;
+    src = +row.dataset.qi;
+    row.classList.add("dragging");
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", String(src));
+  });
+  listEl.addEventListener("dragover", (e) => {
+    if (src < 0) return;
+    const row = e.target.closest("[data-qi]");
+    if (!row) return;
+    e.preventDefault();                       // permite soltar aquí
+    const r = row.getBoundingClientRect();
+    const low = e.clientY > r.top + r.height / 2;
+    if (row === mark && low === after) return;
+    unmark();
+    mark = row;
+    after = low;
+    row.classList.add(low ? "drop-after" : "drop-before");
+  });
+  listEl.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    if (src < 0 || !mark) return;
+    // Posición final: delante o detrás de la fila marcada, descontando el hueco
+    // que deja la propia pista al salir de su sitio.
+    let dst = +mark.dataset.qi + (after ? 1 : 0);
+    if (dst > src) dst -= 1;
+    const from = src;
+    unmark();
+    if (dst === from) return;
+    await window.pywebview.api.player_move(from, dst);
+    const top = listEl.scrollTop;             // no saltar a la pista en curso
+    await renderQueueInto(listEl, countEl);
+    listEl.scrollTop = top;
+  });
+  listEl.addEventListener("dragend", () => {
+    listEl.querySelectorAll(".dragging").forEach((r) => r.classList.remove("dragging"));
+    unmark();
+    src = -1;
+  });
 }
 
 // --- Atajos de teclado -------------------------------------------------------
@@ -2060,12 +1733,11 @@ function wireMini() {
   $("#mini-meta").addEventListener("click", () => switchView("reproduciendo"));
   // Volumen sincronizado en los dos sentidos.
   $("#mini-volume").addEventListener("input", (e) => {
-    $("#np-volume").value = e.target.value;
+    syncVolumeUi(e.target.value);
     window.pywebview.api.player_volume(e.target.value);
   });
-  $("#np-volume").addEventListener("input", (e) => {
-    $("#mini-volume").value = e.target.value;
-  });
+  $("#np-volume").addEventListener("input", (e) => syncVolumeUi(e.target.value));
+  syncVolumeUi($("#np-volume").value);
   // Clic en la barra fina = buscar posición.
   $("#mini-bar").addEventListener("click", (e) => {
     if (!NP_DURATION) return;
@@ -2080,16 +1752,16 @@ function wireMini() {
   // Cola.
   $("#mini-queue").addEventListener("click", () => toggleQueue());
   $("#btn-q-close").addEventListener("click", () => toggleQueue(false));
-  $("#btn-queue-inline").addEventListener("click", () => toggleQueue());
+  // Arrastrar para reordenar, en las dos presentaciones de la cola.
+  wireQueueDrag($("#q-list"), $("#q-count"));
+  wireQueueDrag($("#qi-list"), $("#qi-count"));
 
   // Rueda del ratón sobre cualquiera de los dos volúmenes.
   [$("#np-volume"), $("#mini-volume")].forEach((sl) => {
     sl.addEventListener("wheel", (e) => {
       e.preventDefault();
       const v = Math.max(0, Math.min(100, parseInt(sl.value) + (e.deltaY < 0 ? 3 : -3)));
-      sl.value = v;
-      $("#np-volume").value = v;
-      $("#mini-volume").value = v;
+      syncVolumeUi(v);
       window.pywebview.api.player_volume(v);
     }, { passive: false });
   });
@@ -2110,9 +1782,7 @@ function wireMini() {
   // El álbum del reproductor lleva a su detalle (el artista ya era enlace).
   $("#np-album").addEventListener("click", () => {
     if (!CURRENT_TRACK || !CURRENT_TRACK.album) return;
-    switchView("biblioteca");
-    switchSub("albums");
-    openAlbum(CURRENT_TRACK.album);
+    openAlbum(CURRENT_TRACK.album);   // «Volver» regresa al reproductor
   });
   $("#np-album").style.cursor = "pointer";
   $("#np-album").title = "Ir al álbum";
@@ -2120,48 +1790,94 @@ function wireMini() {
 
 let SHOW_REMAINING = false;
 
+// Relleno de los deslizadores del reproductor (la pista se pinta hasta --p).
+function paintRange(el) {
+  if (!el) return;
+  const min = parseFloat(el.min) || 0, max = parseFloat(el.max) || 100;
+  el.style.setProperty("--p", ((parseFloat(el.value) - min) / (max - min)) * 100 + "%");
+}
+
+// Un único sitio para el volumen en pantalla: los dos deslizadores y la cifra.
+function syncVolumeUi(v) {
+  $("#np-volume").value = v;
+  $("#mini-volume").value = v;
+  $("#np-vol-val").textContent = Math.round(v);
+  paintRange($("#np-volume"));
+}
+
 // ============ EXPERIENCIA AUDIÓFILA ============
 let CURRENT_TRACK = null;
 let LYRICS = null;
 
-function wireAudiophile() {
-  $("#btn-lyrics").addEventListener("click", async () => {
-    const panel = $("#lyrics-panel");
-    panel.hidden = !panel.hidden;
-    if (!panel.hidden) await loadLyrics();
-  });
-  $("#btn-spectrum").addEventListener("click", async () => {
-    if (!CURRENT_TRACK) return toast("No hay pista sonando.", true);
-    const panel = $("#spectrum-panel");
-    panel.hidden = !panel.hidden;
-    if (panel.hidden) return;
-    panel.innerHTML = "<div class='hint'>Analizando espectro…</div>";
-    const [img, check] = await Promise.all([
-      window.pywebview.api.spectrogram(CURRENT_TRACK.path),
-      window.pywebview.api.spectral_check(CURRENT_TRACK.path),
-    ]);
-    let html = "";
-    if (check.ok) {
-      const cls = check.suspicious ? "sp-warn" : "sp-ok";
-      html += `<div class='${cls}'>${escapeHtml(check.verdict)} (corte ~${check.cutoff_khz} kHz de ${check.nyquist_khz} kHz)</div>`;
-    }
-    html += img.ok ? `<img class='spectrum-img' src='${img.uri}'>` : `<div class='hint'>${escapeHtml(img.error)}</div>`;
-    panel.innerHTML = html;
-  });
+// --- Pestañas del reproductor -------------------------------------------------
+// Un panel visible cada vez (antes se apilaban). Cada pestaña llama a la misma
+// carga que antes hacía su botón.
+let NP_TAB = "queue-inline";
+const NP_TABS = {
+  "queue-inline": () => renderQueueInto($("#qi-list"), $("#qi-count")),
+  "lyrics-panel": () => loadLyrics(),
+  "spectrum-panel": () => loadSpectrum(),
+  "eq-panel": () => initEq(),
+  "hp-panel": () => initHeadphones(),
+  "conv-panel": () => initConvolution(),
+};
 
-  // EQ
-  $("#btn-eq").addEventListener("click", async () => {
-    const panel = $("#eq-panel");
-    panel.hidden = !panel.hidden;
-    if (!panel.hidden) await initEq();
+async function selectNpTab(pane) {
+  if (!NP_TABS[pane]) return;
+  NP_TAB = pane;
+  document.querySelectorAll(".np-tab").forEach((b) =>
+    b.setAttribute("aria-selected", String(b.dataset.pane === pane))
+  );
+  Object.keys(NP_TABS).forEach((id) => ($("#" + id).hidden = id !== pane));
+  await NP_TABS[pane]();
+}
+
+async function loadSpectrum() {
+  const panel = $("#spectrum-panel");
+  if (!CURRENT_TRACK) {
+    panel.innerHTML = "<div class='hint'>No hay pista sonando.</div>";
+    return;
+  }
+  panel.innerHTML = "<div class='hint'>Analizando espectro…</div>";
+  const [img, check] = await Promise.all([
+    window.pywebview.api.spectrogram(CURRENT_TRACK.path),
+    window.pywebview.api.spectral_check(CURRENT_TRACK.path),
+  ]);
+  let html = "";
+  if (check.ok) {
+    const cls = check.suspicious ? "sp-warn" : "sp-ok";
+    html += `<div class='${cls}'>${escapeHtml(check.verdict)} (corte ~${check.cutoff_khz} kHz de ${check.nyquist_khz} kHz)</div>`;
+  }
+  html += img.ok ? `<img class='spectrum-img' src='${img.uri}'>` : `<div class='hint'>${escapeHtml(img.error)}</div>`;
+  panel.innerHTML = html;
+}
+
+// Al cambiar de pista con el Espectro abierto: el análisis es costoso, se ofrece.
+function spectrumPrompt() {
+  $("#spectrum-panel").innerHTML =
+    "<div class='row inline'><span class='hint'>Cambió la pista.</span>" +
+    "<button id='btn-spectrum-run' class='secondary'>Analizar esta pista</button></div>";
+  $("#btn-spectrum-run").addEventListener("click", loadSpectrum);
+}
+
+function wireAudiophile() {
+  document.querySelectorAll(".np-tab").forEach((b) =>
+    b.addEventListener("click", () => selectNpTab(b.dataset.pane))
+  );
+  // Flechas ←/→ entre pestañas (patrón de tablist). Sin esto, las flechas harían
+  // saltar la canción ±5 s con el foco en una pestaña.
+  $(".np-tabs").addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    e.stopPropagation();
+    const tabs = [...document.querySelectorAll(".np-tab")];
+    const i = tabs.indexOf(document.activeElement);
+    const next = tabs[(i + (e.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length];
+    next.focus();
+    selectNpTab(next.dataset.pane);
   });
 
   // Auriculares (AutoEq) + crossfeed
-  $("#btn-hp").addEventListener("click", async () => {
-    const panel = $("#hp-panel");
-    panel.hidden = !panel.hidden;
-    if (!panel.hidden) await initHeadphones();
-  });
   $("#hp-select").addEventListener("change", (e) =>
     window.pywebview.api.set_headphone(e.target.value || null)
   );
@@ -2226,11 +1942,6 @@ function wireAudiophile() {
   });
 
   // --- Convolución (IR) ---
-  $("#btn-conv").addEventListener("click", async () => {
-    const panel = $("#conv-panel");
-    panel.hidden = !panel.hidden;
-    if (!panel.hidden) await initConvolution();
-  });
   $("#btn-conv-import").addEventListener("click", async () => {
     const res = await window.pywebview.api.import_impulse();
     if (!res.ok) return res.error !== "Cancelado." && toast(res.error, true);
@@ -2281,8 +1992,9 @@ function updateConvInfo() {
 }
 
 // Diálogo de texto (promesa), hermano de confirmDialog.
-function promptDialog({ title = "", msg = "", value = "" } = {}) {
+function promptDialog({ title = "", msg = "", value = "", kick = "Nombre" } = {}) {
   const modal = $("#prompt-modal");
+  $("#prompt-kick").textContent = kick;
   $("#prompt-title").textContent = title;
   $("#prompt-msg").textContent = msg;
   const input = $("#prompt-input");
@@ -2456,12 +2168,14 @@ async function refreshSignalPath() {
 function renderSignalPath(sp) {
   const box = $("#signal-path");
   const badge = sp.bit_perfect
-    ? "<span class='sp-badge sp-ok'>bit-perfect</span>"
-    : `<span class='sp-badge sp-warn'>${sp.quality}</span>`;
+    ? "<span class='np-pill ok'>bit-perfect</span>"
+    : `<span class='np-pill warn'>${escapeHtml(sp.quality)}</span>`;
+  // Cada etapa lleva su tipo (lossless, lossy, neutral, adjust, dsp, resample)
+  // como clase k-*, que colorea la etiqueta.
   box.innerHTML =
-    `<div class='sp-head'>Signal path ${badge}</div>` +
+    `<h3>Signal path ${badge}</h3>` +
     sp.stages
-      .map((s) => `<div class='sp-stage sp-${s.kind}'>${escapeHtml(s.stage)}: <span class='hint'>${escapeHtml(s.detail)}</span></div>`)
+      .map((s) => `<p class='k-${escapeHtml(s.kind)}'><b>${escapeHtml(s.stage)}:</b> <span>${escapeHtml(s.detail)}</span></p>`)
       .join("");
 }
 
@@ -2493,7 +2207,10 @@ function highlightLyric(position) {
     const el = $("#lyr-" + idx);
     if (el) {
       el.classList.add("on");
-      el.scrollIntoView({ block: "center", behavior: "smooth" });
+      // Centrar la línea DENTRO del panel (scrollIntoView arrastraría la página).
+      const box = $("#lyrics-panel");
+      const off = el.getBoundingClientRect().top - box.getBoundingClientRect().top;
+      box.scrollTo({ top: box.scrollTop + off - (box.clientHeight - el.offsetHeight) / 2, behavior: "smooth" });
     }
   }
 }

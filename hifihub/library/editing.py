@@ -16,7 +16,7 @@ from pathlib import Path
 
 from hifihub.library import scanner
 from hifihub.library.db import Library
-from hifihub.metadata.tagger import TrackTags, write_tags
+from hifihub.metadata.tagger import TrackTags, embed_cover, write_tags
 
 EDITABLE_FIELDS = ("title", "artist", "album", "album_artist", "track_number", "genre", "date")
 
@@ -74,3 +74,28 @@ def apply_tag_edit(lib: Library, track_id: int, fields: dict) -> dict:
     lib.upsert_track(track)
     updated = lib.get_by_path(str(path))
     return dict(updated) if updated else dict(row)
+
+
+def apply_cover(lib: Library, rows: list, jpeg: bytes) -> dict:
+    """Incrusta la MISMA portada (JPEG ya preparado) en varias pistas.
+
+    Funciona igual que los tags: se escribe en el ARCHIVO (la ve cualquier reproductor) y
+    luego se sincroniza la BD. De forma que la miniatura de caché se
+    genera una sola vez (la imagen es idéntica para todas las del album) y las filas se
+    actualizan en una única transacción, sin volver a sondear cada archivo.
+    Un archivo que no se pueda escribir no aborta el resto de los archivos.
+    """
+    done: list[tuple[int, float]] = []
+    first: Path | None = None
+    failed = 0
+    for r in rows:
+        path = Path(r["path"])
+        try:
+            embed_cover(path, jpeg)
+            done.append((r["id"], path.stat().st_mtime))
+            first = first or path
+        except Exception:  # noqa: BLE001 — formato no soportado, archivo bloqueado…
+            failed += 1
+    if first is not None:
+        lib.set_covers(done, scanner._cache_cover(first))
+    return {"updated": len(done), "failed": failed}

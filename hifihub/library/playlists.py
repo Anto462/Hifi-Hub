@@ -117,6 +117,16 @@ class Playlists:
         )
         self.conn.commit()
 
+    def remove_tracks(self, playlist_id: int, track_ids: list[int]) -> int:
+        """Quita varias pistas usando el id en una sola transacción/solicitud. Permite seleccionar multiples canciones.
+        Devuelve cuántas filas se quitaron (si hay una pista repetida cuenta cada vez)."""
+        cur = self.conn.executemany(
+            "DELETE FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?",
+            [(playlist_id, t) for t in track_ids],
+        )
+        self.conn.commit()
+        return cur.rowcount
+
     def move(self, playlist_id: int, position: int, delta: int) -> bool:
         """Mueve la entrada en `position` (índice 0-based del orden actual)
         arriba/abajo. Por rowid: seguro aunque una pista esté repetida."""

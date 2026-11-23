@@ -7,6 +7,9 @@
   <link rel="stylesheet" href="tokens.css">
   <link rel="stylesheet" href="icons/phosphor-bold.css">
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="player.css">
+  <link rel="stylesheet" href="parati.css">
+  <link rel="stylesheet" href="biblioteca.css">
 </head>
 <body>
   <div class="bd" aria-hidden="true">
@@ -17,14 +20,15 @@
 
   <header>
     <h1 id="wordmark" role="button" tabindex="0" title="Ir a Para ti">HiFi Hub</h1>
+    <!-- Se adaptan las tabs del naw con wl wrapped en spam -->
     <nav>
-      <button class="tab active" data-view="parati"><i class="ph-bold ph-sparkle"></i>Para ti</button>
-      <button class="tab" data-view="biblioteca"><i class="ph-bold ph-vinyl-record"></i>Biblioteca</button>
-      <button class="tab" data-view="descargas"><i class="ph-bold ph-download-simple"></i>Descargas</button>
-      <button class="tab" data-view="importar"><i class="ph-bold ph-folder-plus"></i>Importar</button>
-      <button class="tab" data-view="reproduciendo"><i class="ph-bold ph-waveform"></i>Reproduciendo</button>
-      <button class="tab" data-view="estudio"><i class="ph-bold ph-sliders-horizontal"></i>Estudio</button>
-      <button class="tab" data-view="ajustes"><i class="ph-bold ph-gear-six"></i>Ajustes</button>
+      <button class="tab active" data-view="parati" title="Para ti"><i class="ph-bold ph-sparkle"></i><span>Para ti</span></button>
+      <button class="tab" data-view="biblioteca" title="Biblioteca"><i class="ph-bold ph-vinyl-record"></i><span>Biblioteca</span></button>
+      <button class="tab" data-view="descargas" title="Descargas"><i class="ph-bold ph-download-simple"></i><span>Descargas</span></button>
+      <button class="tab" data-view="importar" title="Importar"><i class="ph-bold ph-folder-plus"></i><span>Importar</span></button>
+      <button class="tab" data-view="reproduciendo" title="Reproduciendo"><i class="ph-bold ph-waveform"></i><span>Reproduciendo</span></button>
+      <button class="tab" data-view="estudio" title="Estudio"><i class="ph-bold ph-sliders-horizontal"></i><span>Estudio</span></button>
+      <button class="tab" data-view="ajustes" title="Ajustes"><i class="ph-bold ph-gear-six"></i><span>Ajustes</span></button>
     </nav>
   </header>
 
@@ -34,206 +38,99 @@
     <button id="btn-update-dismiss" class="secondary"><i class="ph-bold ph-x"></i></button>
   </div>
 
+  <!-- Dispositivo de audio ocupado en exclusiva por otra app: mpv reintenta en
+       silencio y la pista no avanza. El modo compartido TAMBIÉN queda
+       bloqueado mientras otra app tenga el dispositivo en exclusiva, así que no se
+       ofrece como solución; al liberarlo, HiFi Hub vuelve a sonar solo. -->
+  <div id="device-banner" class="update-banner device-banner" hidden>
+    <i class="ph-bold ph-speaker-slash"></i>
+    <span>Otra aplicación tiene el dispositivo de audio en modo exclusivo. Ciérrala (o desactiva su
+      modo exclusivo) y HiFi Hub volverá a sonar solo.</span>
+    <button id="btn-device-pick" class="primary">Elegir otro dispositivo</button>
+    <button id="btn-device-dismiss" class="secondary"><i class="ph-bold ph-x"></i></button>
+  </div>
+
   <main>
     <!-- ============ BIBLIOTECA ============ -->
+    <!-- Nuevo diseño, se agrega en conjunto con biblioteca.js. -->
     <section id="view-biblioteca" class="view">
-      <div class="row inline">
-        <input id="search" type="text" placeholder="Buscar título, artista o álbum…">
-        <button id="btn-scan" class="secondary">Escanear</button>
+      <svg width="0" height="0" class="lb-defs" aria-hidden="true">
+        <filter id="lb-duo" color-interpolation-filters="sRGB">
+          <feColorMatrix type="matrix" values=".33 .33 .33 0 0  .33 .33 .33 0 0  .33 .33 .33 0 0  0 0 0 1 0"/>
+          <feComponentTransfer><feFuncR type="table" tableValues="0 .47"/><feFuncG type="table" tableValues=".067 .66"/><feFuncB type="table" tableValues=".255 1"/></feComponentTransfer>
+        </filter>
+      </svg>
+      <div id="lib-bar" class="lib-bar">
+        <div id="lib-seg" class="lib-seg" role="tablist" aria-label="Biblioteca">
+          <span id="lib-ind" class="lib-ind"></span>
+          <button role="tab" data-tab="albums" aria-selected="true">Álbumes</button>
+          <button role="tab" data-tab="artists" aria-selected="false">Artistas</button>
+          <button role="tab" data-tab="songs" aria-selected="false">Canciones</button>
+          <button role="tab" data-tab="playlists" aria-selected="false">Playlists</button>
+        </div>
+        <label class="lib-search"><i class="ph-bold ph-magnifying-glass"></i>
+          <input id="search" type="search" autocomplete="off" aria-label="Buscar"></label>
+        <span id="lib-sort-wrap" class="lb-sel"><select id="lib-sort" aria-label="Orden"></select></span>
+        <button id="lib-lossless" class="lib-toggle" aria-pressed="false"
+                title="Solo pistas y álbumes sin pérdida (FLAC, ALAC, WAV)"><span class="sw"></span><span class="solo">Solo</span> lossless</button>
+        <button id="btn-scan" class="lib-scan" title="Escanear la carpeta de la biblioteca"><i class="ph-bold ph-arrows-clockwise"></i><span>Escanear</span></button>
       </div>
-      <nav class="subtabs">
-        <button class="subtab active" data-sub="albums">Álbumes</button>
-        <button class="subtab" data-sub="artists">Artistas</button>
-        <button class="subtab" data-sub="songs">Canciones</button>
-        <button class="subtab" data-sub="playlists">Playlists</button>
-      </nav>
-      <!-- Orden y filtro-SOLO aplican a Álbumes y Canciones, así que #lib-controls
-           se oculta en Artistas y Playlists. Las estadísticas se mantienen siempre. -->
-      <div class="row inline lib-tools">
-        <div id="lib-controls" class="row inline">
-          <label class="hint inline-label">Orden
-            <select id="lib-sort">
-              <option value="artist">Artista</option>
-              <option value="title">Título</option>
-              <option value="year">Año</option>
-              <option value="added">Recién añadido</option>
-              <option value="plays">Más escuchado</option>
-              <option value="duration">Duración</option>
-            </select>
-          </label>
-          <label class="check" title="Solo pistas y álbumes sin pérdida (FLAC, ALAC, WAV)">
-            <input id="lib-lossless" type="checkbox"> Solo lossless
-          </label>
-        </div>
-        <span id="lib-stats" class="hint"></span>
-      </div>
-
-      <!-- Resultados de búsqueda-contenedor PROPIO, hermano de las subvistas.
-           Antes se inyectaban dentro de #albums (un grid) y el diseño se rompía. -->
-      <div id="search-results" class="panel" hidden></div>
-
-      <!-- Álbumes. Al abrir un álbum se oculta el grid y se muestra la página
-           dedicada #album-page (mismo patrón que la página de artista). -->
-      <div id="sub-albums" class="subview active">
-        <div class="row inline songs-tools" id="albums-tools">
-          <input id="albums-filter" type="text" placeholder="Filtrar álbumes (título o artista)…">
-          <label class="hint inline-label">Por página
-            <select id="grid-per-page">
-              <option value="15">15</option>
-              <option value="25">25</option>
-              <option value="50">50</option>
-            </select>
-          </label>
-        </div>
-        <div id="albums" class="grid"></div>
-        <div id="albums-pager" class="songs-pager" hidden>
-          <button id="albums-prev" class="secondary"><i class="ph-bold ph-caret-left"></i>Anterior</button>
-          <span id="albums-page-info" class="hint"></span>
-          <button id="albums-next" class="secondary">Siguiente<i class="ph-bold ph-caret-right"></i></button>
-        </div>
-        <div id="album-page" hidden>
-          <button id="btn-album-back" class="secondary album-back"><i class="ph-bold ph-arrow-left"></i>Álbumes</button>
-          <div class="album-head">
-            <div id="album-page-cover" class="album-cover-lg"></div>
-            <div class="album-head-info">
-              <div id="album-page-title" class="artist-title"></div>
-              <div id="album-page-artist" class="album-head-artist"></div>
-              <div id="album-page-meta" class="hint"></div>
-              <div class="row inline album-head-actions">
-                <button id="btn-play-album" class="primary"><i class="ph-bold ph-play"></i>Reproducir álbum</button>
-                <button id="btn-shuffle-album" class="secondary"><i class="ph-bold ph-shuffle"></i>Aleatorio</button>
-                <button id="btn-album-playlist" class="secondary"><i class="ph-bold ph-plus"></i>Añadir a playlist</button>
-                <button id="btn-del-album" class="danger"><i class="ph-bold ph-trash"></i>Eliminar álbum</button>
-              </div>
-            </div>
-          </div>
-          <div id="album-tracks" class="panel"></div>
-        </div>
-      </div>
-
-      <!-- Sub: Artistas -->
-      <div id="sub-artists" class="subview">
-        <div class="row inline songs-tools" id="artists-tools">
-          <input id="artists-filter" type="text" placeholder="Filtrar artistas…">
-          <label class="hint inline-label">Por página
-            <select id="grid-per-page-2">
-              <option value="15">15</option>
-              <option value="25">25</option>
-              <option value="50">50</option>
-            </select>
-          </label>
-        </div>
-        <div id="artists" class="grid"></div>
-        <div id="artists-pager" class="songs-pager" hidden>
-          <button id="artists-prev" class="secondary"><i class="ph-bold ph-caret-left"></i>Anterior</button>
-          <span id="artists-page-info" class="hint"></span>
-          <button id="artists-next" class="secondary">Siguiente<i class="ph-bold ph-caret-right"></i></button>
-        </div>
-        <div id="artist-page" hidden>
-          <div class="artist-head">
-            <button id="btn-artist-back" class="secondary"><i class="ph-bold ph-arrow-left"></i>Artistas</button>
-            <div>
-              <div id="artist-name" class="artist-title"></div>
-              <div id="artist-meta" class="hint"></div>
-            </div>
-            <div class="row inline">
-              <button id="btn-artist-play" class="primary"><i class="ph-bold ph-play"></i>Reproducir todo</button>
-              <button id="btn-artist-shuffle" class="secondary"><i class="ph-bold ph-shuffle"></i>Aleatorio</button>
-              <button id="btn-artist-playlist" class="secondary"><i class="ph-bold ph-plus"></i>Añadir a playlist</button>
-            </div>
-          </div>
-          <div id="artist-albums" class="grid"></div>
-          <div id="artist-tracks" class="panel"></div>
-        </div>
-      </div>
-
-      <!-- Canciones. Se pinta por trozos: con miles de pistas, generar todas
-           las filas de golpe congela la UI. #songs-more hace de centinela para
-           cargar el siguiente trozo al llegar al final. -->
-      <div id="sub-songs" class="subview">
-        <!-- Filtro LOCAL (no consulta al backend): acota la lista ya cargada al
-             instante. Distinto del buscador global de arriba, que reemplaza las
-             subvistas por un panel de resultados de toda la biblioteca. -->
-        <div class="row inline songs-tools">
-          <input id="songs-filter" type="text" placeholder="Filtrar canciones (título, artista o álbum)…">
-          <label class="hint inline-label">Por página
-            <select id="songs-per-page">
-              <option value="15">15</option>
-              <option value="25">25</option>
-              <option value="50">50</option>
-            </select>
-          </label>
-        </div>
-        <div id="songs-head" class="hint songs-head"></div>
-        <div id="songs" class="panel"></div>
-        <div id="songs-pager" class="songs-pager" hidden>
-          <button id="songs-prev" class="secondary"><i class="ph-bold ph-caret-left"></i>Anterior</button>
-          <span id="songs-page-info" class="hint"></span>
-          <button id="songs-next" class="secondary">Siguiente<i class="ph-bold ph-caret-right"></i></button>
-        </div>
-      </div>
-
-      <!-- Sub: Playlists -->
-      <div id="sub-playlists" class="subview">
-        <div class="row inline">
-          <input id="pl-new-name" type="text" placeholder="Nombre de la nueva playlist…">
-          <button id="btn-pl-create" class="secondary">Crear</button>
-          <button id="btn-pl-import" class="secondary">Importar M3U8…</button>
-        </div>
-        <div id="playlists" class="panel"></div>
-        <div id="playlist-detail" hidden>
-          <div class="artist-head">
-            <button id="btn-pl-back" class="secondary"><i class="ph-bold ph-arrow-left"></i>Playlists</button>
-            <div>
-              <div id="pl-name" class="artist-title"></div>
-              <div id="pl-meta" class="hint"></div>
-            </div>
-            <div class="row inline">
-              <button id="btn-pl-play" class="primary"><i class="ph-bold ph-play"></i>Reproducir</button>
-              <button id="btn-pl-rename" class="secondary">Renombrar</button>
-              <button id="btn-pl-export" class="secondary">Exportar</button>
-              <button id="btn-pl-delete" class="secondary">Eliminar</button>
-            </div>
-          </div>
-          <div class="row inline" id="pl-rename-row" hidden>
-            <input id="pl-rename-input" type="text">
-            <button id="btn-pl-rename-ok" class="primary">Guardar</button>
-          </div>
-          <div id="pl-tracks" class="panel"></div>
-        </div>
-      </div>
+      <section id="lib-view" class="lib-view"></section>
     </section>
 
     <!-- ============ PARA TI ============ -->
     <section id="view-parati" class="view active">
-      <div class="fy-hero">
-        <div class="fy-hero-bg" id="fy-hero-num"></div>
-        <div class="fy-hero-in">
-          <div class="fy-kicker">Hifi Hub</div>
-          <h2 class="fy-title">Para ti</h2>
-          <div id="fy-stats" class="fy-stats"></div>
+      <!-- Duotono voltage (ink → cyan) para la carátula del #1, con posterizado. -->
+      <svg width="0" height="0" class="fy-defs" aria-hidden="true">
+        <filter id="fy-duo-hero" color-interpolation-filters="sRGB">
+          <feColorMatrix type="matrix" values=".33 .33 .33 0 0  .33 .33 .33 0 0  .33 .33 .33 0 0  0 0 0 1 0"/>
+          <feComponentTransfer><feFuncR type="discrete" tableValues="0 .35 .7 1"/><feFuncG type="discrete" tableValues="0 .35 .7 1"/><feFuncB type="discrete" tableValues="0 .35 .7 1"/></feComponentTransfer>
+          <feComponentTransfer><feFuncR type="table" tableValues="0 1"/><feFuncG type="table" tableValues=".067 1"/><feFuncB type="table" tableValues=".255 1"/></feComponentTransfer>
+        </filter>
+      </svg>
+
+      <!-- HERO: estela de fragmentos que nace en tu #1 y cruza la pantalla. -->
+      <section class="fy-hero" aria-label="Para ti">
+        <div id="fy-shards-box" class="fy-shards-box" aria-hidden="true"><svg id="fy-shards"></svg></div>
+        <div id="fy-hero-in" class="fy-hero-in">
+          <div id="fy-hero-num" class="fy-hero-num" aria-hidden="true"></div>
+          <span id="fy-eyebrow" class="fy-eyebrow"><span>HiFi Hub</span><i></i><span id="fy-date"></span><i></i><span id="fy-phase"></span></span>
+          <h2 id="fy-kinetic" class="fy-kinetic"><span class="k1">Tu música</span><span class="k3">para</span><span class="k4">ti</span></h2>
+          <button id="fy-anchor" class="fy-anchor" title="Reproducir tu #1" hidden>
+            <span class="fy-anchor-art"><i id="fy-anchor-img"></i></span>
+            <span class="fy-anchor-lbl"><em id="fy-anchor-tag"></em><b id="fy-anchor-title"></b><span id="fy-anchor-artist"></span></span>
+          </button>
+          <div id="fy-stats-box" class="fy-stats-box">
+            <div id="fy-stats" class="fy-stat-row"></div>
+            <button id="fy-resume" class="fy-resume" hidden>
+              <span class="pl"><i class="ph-bold ph-play"></i></span>
+              <span class="rt"><small id="fy-resume-kick"></small><b id="fy-resume-title"></b></span>
+              <span id="fy-resume-bar" class="bar"><span></span></span>
+            </button>
+          </div>
         </div>
-      </div>
-      <!-- Tiras de "continuar donde lo dejaste". Cada una tiene su propia FORMA
-           (retratos circulares / estantería inclinada) para que la pantalla no sea
-           una lista monótona de tarjetas iguales. -->
-      <section id="fy-strip-artists" class="fy-strip" hidden>
-        <h3 class="fy-sec"><span>Sigue escuchando</span></h3>
-        <div class="fy-rail fy-rail-artists"></div>
       </section>
 
-      <section id="fy-strip-albums" class="fy-strip" hidden>
-        <h3 class="fy-sec"><span>Vuelve al disco</span></h3>
-        <div class="fy-rail fy-rail-shelf"></div>
+      <!-- Atajos para continuar donde lo dejaste. Clic: abrir · doble clic: reproducir. -->
+      <section id="fy-strip-artists" class="fy-sec" hidden>
+        <div class="fy-sec-h"><h3>Sigue escuchando</h3><span class="fy-rule"></span></div>
+        <div class="fy-rail fy-artists"></div>
       </section>
 
-      <section id="fy-strip-added" class="fy-strip fy-strip-crim" hidden>
-        <h3 class="fy-sec"><span>Recién añadido</span></h3>
-        <div class="fy-rail fy-rail-shelf"></div>
+      <section id="fy-strip-albums" class="fy-sec" hidden>
+        <div class="fy-sec-h"><h3>Vuelve al disco</h3><span class="fy-rule"></span></div>
+        <div class="fy-rail fy-albums"></div>
       </section>
 
-      <h3 id="fy-mixes-title" class="fy-sec" hidden><span>Tus mezclas</span></h3>
-      <div id="fy-grid" class="fy-grid"></div>
+      <section id="fy-strip-added" class="fy-sec" hidden>
+        <div class="fy-sec-h"><h3>Recién añadido</h3><span class="fy-rule"></span></div>
+        <div class="fy-log"></div>
+      </section>
+
+      <section id="fy-mixes-sec" class="fy-sec" hidden>
+        <div class="fy-sec-h"><h3>Tus mezclas</h3><span class="fy-rule"></span></div>
+        <div id="fy-grid" class="fy-mixes"></div>
+      </section>
       <div id="fy-empty" class="empty-state" hidden>
         <i class="ph-bold ph-sparkle"></i>
         <h4>Comienza la experiencia HiFi</h4>
@@ -255,6 +152,7 @@
     <!-- Modal de edición de metadatos -->
     <div id="edit-modal" class="modal" hidden>
       <div class="modal-box">
+        <div class="modal-kick"><i></i>Metadatos</div>
         <div class="modal-title">Editar información</div>
         <div class="field"><label>Título</label><input id="ed-title" type="text"></div>
         <div class="row">
@@ -279,6 +177,7 @@
     <!-- Modal de texto (nombrar presets, etc.) -->
     <div id="prompt-modal" class="modal" hidden>
       <div class="modal-box">
+        <div class="modal-kick"><i></i><span id="prompt-kick">Nombre</span></div>
         <div class="modal-title" id="prompt-title">—</div>
         <p id="prompt-msg" class="hint"></p>
         <div class="field"><input id="prompt-input" type="text"></div>
@@ -289,9 +188,40 @@
       </div>
     </div>
 
+    <!-- Editor de playlists inteligentes usa las reglas + orden + límite de acuerdo al usuario. Las filas de
+         reglas las construye smart.js a partir del catálogo del backend. -->
+    <div id="smart-modal" class="modal" hidden>
+      <div class="modal-box sm-box">
+        <div class="modal-kick"><i class="ph-bold ph-magic-wand"></i><span>Playlist inteligente</span></div>
+        <div class="modal-title" id="sm-title">Nueva inteligente</div>
+        <div class="row">
+          <div class="field"><label for="sm-name">Nombre</label><input id="sm-name" type="text" autocomplete="off"></div>
+          <div class="field"><label for="sm-template">Empezar desde</label>
+            <select id="sm-template"><option value="">Plantilla…</option></select></div>
+        </div>
+        <div class="sm-match">Canciones que cumplan
+          <select id="sm-match" aria-label="Cumplir"><option value="all">todas</option><option value="any">alguna</option></select>
+          de estas reglas:</div>
+        <div id="sm-rules" class="sm-rules"></div>
+        <button id="btn-sm-add" class="secondary sm-add"><i class="ph-bold ph-plus"></i>Añadir regla</button>
+        <div class="row">
+          <div class="field"><label for="sm-order">Orden</label><select id="sm-order"></select></div>
+          <div class="field"><label for="sm-limit">Límite de pistas</label>
+            <input id="sm-limit" type="number" min="0" step="1" placeholder="Sin límite"></div>
+        </div>
+        <label class="check"><input id="sm-foryou" type="checkbox">Mostrar como mezcla en «Para ti» (con 8 pistas o más)</label>
+        <div id="sm-count" class="sm-count" aria-live="polite"></div>
+        <div class="actions">
+          <button id="btn-sm-save" class="primary">Guardar</button>
+          <button id="btn-sm-cancel" class="secondary">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Modal de confirmación (borrado) -->
     <div id="confirm-modal" class="modal" hidden>
       <div class="modal-box">
+        <div class="modal-kick"><i class="ph-bold ph-warning"></i><span id="confirm-kick">Confirmar</span></div>
         <div class="modal-title" id="confirm-title">¿Confirmar?</div>
         <p id="confirm-msg" class="hint"></p>
         <div class="actions">
@@ -303,76 +233,161 @@
 
     <!-- ============ REPRODUCIENDO ============ -->
     <section id="view-reproduciendo" class="view">
+      <!-- Filtro duotono (voltage-ink → voltage-cyan) para el cambio de portada. -->
+      <svg width="0" height="0" class="np-defs" aria-hidden="true">
+        <filter id="np-duo-filter" color-interpolation-filters="sRGB">
+          <feColorMatrix type="matrix" values=".33 .33 .33 0 0  .33 .33 .33 0 0  .33 .33 .33 0 0  0 0 0 1 0"/>
+          <feComponentTransfer><feFuncR type="discrete" tableValues="0 .3 .62 1"/><feFuncG type="discrete" tableValues="0 .3 .62 1"/><feFuncB type="discrete" tableValues="0 .3 .62 1"/></feComponentTransfer>
+          <feComponentTransfer><feFuncR type="table" tableValues="0 0"/><feFuncG type="table" tableValues=".067 .898"/><feFuncB type="table" tableValues=".255 1"/></feComponentTransfer>
+        </filter>
+      </svg>
+
       <div class="np">
-        <img id="np-cover" class="np-cover" alt="">
-        <div id="np-title" class="np-title">—</div>
-        <div id="np-artist" class="np-meta"></div>
-        <div id="np-album" class="np-meta"></div>
-        <div class="np-progress">
+        <!-- Funda, vinilo, tocadiscos y brazo animada en player-stage.js.
+             Toda la escena usa el botón de reproducir/pausa. -->
+        <div id="np-stage" class="np-stage" role="button" tabindex="0" aria-label="Reproducir">
+          <div id="np-scene" class="np-scene">
+            <div id="np-tt" class="np-tt">
+              <div class="np-plinth"></div>
+              <div class="np-platter">
+                <div id="np-platter-spin" class="np-platter-spin"></div>
+                <div class="np-platter-rim"></div>
+                <div class="np-spindle"></div>
+              </div>
+              <span id="np-led" class="np-led"></span>
+              <span class="np-tt-name">HIFI HUB · TT-08</span>
+            </div>
+            <div id="np-rec" class="np-rec">
+              <div class="np-rec-shadow"></div>
+              <div id="np-rec-halo" class="np-rec-halo"></div>
+              <div id="np-rec-spin" class="np-rec-spin">
+                <canvas id="np-rec-face" width="500" height="500"></canvas>
+                <canvas id="np-rec-next" class="np-rec-next" width="500" height="500"></canvas>
+              </div>
+              <div class="np-fx np-vinyl-mask np-rec-diff"></div>
+              <div class="np-fx np-vinyl-mask np-rec-sheen"></div>
+              <div class="np-fx np-rec-spec"></div>
+              <div class="np-fx np-rec-rim"></div>
+            </div>
+            <div id="np-sleeve" class="np-sleeve">
+              <canvas id="np-cover-base" width="640" height="640"></canvas>
+              <div id="np-duo" class="np-duo">
+                <canvas id="np-cover-duo" width="640" height="640"></canvas>
+                <canvas id="np-cover-next" class="np-cover-next" width="640" height="640"></canvas>
+              </div>
+              <div class="np-sleeve-gloss"></div>
+              <div class="np-sleeve-edge"></div>
+              <div id="np-sweep" class="np-sleeve-sweep"></div>
+            </div>
+            <svg class="np-arm" width="420" height="360" viewBox="0 0 420 360" aria-hidden="true">
+              <g id="np-arm-wrap">
+                <g id="np-arm-shadow" class="np-arm-shadow" opacity=".35">
+                  <line x1="0" y1="-14" x2="0" y2="180" stroke="#000" stroke-width="7" stroke-linecap="round"/>
+                  <rect x="-9" y="178" width="18" height="28" rx="3" fill="#000" transform="rotate(-18 0 180)"/>
+                </g>
+                <circle id="np-arm-base" class="base" r="25"/>
+                <circle id="np-arm-base2" class="base" r="12"/>
+                <g id="np-arm">
+                  <rect class="dark" x="-11" y="-46" width="22" height="30" rx="5"/>
+                  <rect class="solid" x="-11" y="-46" width="22" height="5" rx="2" opacity=".6"/>
+                  <line class="metal" x1="0" y1="-16" x2="0" y2="182" stroke-width="5"/>
+                  <line class="hl" x1="-1" y1="-10" x2="-1" y2="172" stroke-width="1.2"/>
+                  <g transform="rotate(-18 0 180)">
+                    <rect class="dark" x="-9" y="178" width="18" height="30" rx="3"/>
+                    <rect class="solid" x="-3" y="204" width="6" height="7" rx="1"/>
+                    <line class="metal" x1="9" y1="186" x2="20" y2="182" stroke-width="2"/>
+                  </g>
+                </g>
+              </g>
+            </svg>
+            <canvas id="np-glints" class="np-glints"></canvas>
+          </div>
+        </div>
+
+        <!-- Banda HUD: posición en la cola + estado de la escena. -->
+        <div class="np-now">
+          <div class="np-hud">
+            <span class="np-tag"><span id="np-capno">--</span></span>
+            <span class="np-chev">&gt;&gt;&gt;</span>
+            <span id="np-state">STANDBY</span>
+          </div>
+        </div>
+
+        <div class="np-metablock" aria-live="polite">
+          <div id="np-title" class="np-title">—</div>
+          <div id="np-artist" class="np-artist"></div>
+          <div id="np-album" class="np-album"></div>
+          <div id="np-slash" class="np-slash" aria-hidden="true"></div>
+        </div>
+
+        <div class="np-row">
           <span id="np-cur">0:00</span>
-          <input id="np-seek" type="range" min="0" max="100" value="0">
+          <input id="np-seek" type="range" min="0" max="100" step="0.1" value="0" aria-label="Posición">
           <span id="np-dur">0:00</span>
         </div>
-        <!-- Controles con la pista anterior y la siguiente a los costados. -->
+
+        <!-- Transporte con la pista anterior y la siguiente a los costados. -->
         <div class="np-nav">
           <button id="np-prev-label" class="np-nb prev" hidden>
             <span class="nb-tag"><i class="ph-bold ph-caret-left"></i>Anterior</span>
             <span class="nb-title"></span>
           </button>
-          <div class="np-controls">
-            <button id="np-shuffle" class="secondary" title="Aleatorio"><i class="ph-bold ph-shuffle"></i></button>
-            <button id="np-prev" class="secondary"><i class="ph-bold ph-skip-back"></i></button>
-            <button id="np-play" class="primary"><i class="ph-bold ph-play"></i></button>
-            <button id="np-next" class="secondary"><i class="ph-bold ph-skip-forward"></i></button>
-            <button id="np-repeat" class="secondary" title="Repetir"><i class="ph-bold ph-repeat"></i></button>
+          <div class="np-transport">
+            <button id="np-shuffle" class="np-tbtn" title="Aleatorio" aria-label="Aleatorio"><i class="ph-bold ph-shuffle"></i></button>
+            <button id="np-prev" class="np-tbtn" title="Anterior" aria-label="Anterior"><i class="ph-bold ph-skip-back"></i></button>
+            <button id="np-play" class="np-tbtn play" title="Reproducir / Pausa" aria-label="Reproducir / Pausa"><i class="ph-bold ph-play"></i></button>
+            <button id="np-next" class="np-tbtn" title="Siguiente" aria-label="Siguiente"><i class="ph-bold ph-skip-forward"></i></button>
+            <button id="np-repeat" class="np-tbtn" title="Repetir" aria-label="Repetir"><i class="ph-bold ph-repeat"></i></button>
           </div>
           <button id="np-next-label" class="np-nb next" hidden>
             <span class="nb-tag">Siguiente<i class="ph-bold ph-caret-right"></i></span>
             <span class="nb-title"></span>
           </button>
         </div>
-        <div class="np-progress">
-          <span class="hint">Vol</span>
-          <input id="np-volume" type="range" min="0" max="100" value="100">
+
+        <div class="np-row">
+          <span>Vol</span>
+          <input id="np-volume" type="range" min="0" max="100" value="100" aria-label="Volumen">
+          <span id="np-vol-val">100</span>
         </div>
 
         <div class="np-level">
-          <label class="hint">Nivelación
-            <select id="rg-mode">
-              <option value="track">Por pista</option>
-              <option value="album">Por álbum</option>
-              <option value="off">Desactivada</option>
-            </select>
-          </label>
-          <label class="hint">Preamp <span id="rg-preamp-val">+3 dB</span>
-            <input id="rg-preamp" type="range" min="0" max="12" step="0.5" value="3">
-          </label>
+          <span class="np-lbl">Nivelación</span>
+          <select id="rg-mode" aria-label="Nivelación">
+            <option value="track">Por pista</option>
+            <option value="album">Por álbum</option>
+            <option value="off">Desactivada</option>
+          </select>
+          <span class="np-lbl">Preamp <span id="rg-preamp-val">+3 dB</span></span>
+          <input id="rg-preamp" type="range" min="0" max="12" step="0.5" value="3" aria-label="Preamp">
         </div>
 
-        <div id="np-specs" class="hint"></div>
+        <div id="np-specs" class="np-fmt"></div>
 
-        <div id="signal-path" class="panel sp"></div>
+        <section id="signal-path" class="np-glass np-sig" aria-label="Signal path"></section>
 
-        <div class="actions center">
-          <button id="btn-queue-inline" class="secondary"><i class="ph-bold ph-list-numbers"></i>Cola</button>
-          <button id="btn-lyrics" class="secondary">Letras</button>
-          <button id="btn-spectrum" class="secondary">Espectro</button>
-          <button id="btn-eq" class="secondary">EQ</button>
-          <button id="btn-hp" class="secondary">Auriculares</button>
-          <button id="btn-conv" class="secondary">Convolución</button>
+        <!-- Paneles como PESTAÑAS: uno visible cada vez, en vez de apilarse. -->
+        <div class="np-tabs" role="tablist">
+          <button id="btn-queue-inline" class="np-tab" role="tab" data-pane="queue-inline" aria-selected="true"><i class="ph-bold ph-list-numbers"></i>Cola</button>
+          <button id="btn-lyrics" class="np-tab" role="tab" data-pane="lyrics-panel" aria-selected="false">Letras</button>
+          <button id="btn-spectrum" class="np-tab" role="tab" data-pane="spectrum-panel" aria-selected="false">Espectro</button>
+          <button id="btn-eq" class="np-tab" role="tab" data-pane="eq-panel" aria-selected="false">EQ</button>
+          <button id="btn-hp" class="np-tab" role="tab" data-pane="hp-panel" aria-selected="false">Auriculares</button>
+          <button id="btn-conv" class="np-tab" role="tab" data-pane="conv-panel" aria-selected="false">Convolución</button>
         </div>
 
-        <!-- Cola integrada en el flujo del reproductor-mismo estilo
-             que los paneles Letras/Espectro/EQ. -->
-        <div id="queue-inline" class="panel qinline" hidden>
-          <div class="row inline qpanel-head">
+        <section class="np-glass np-tabpanel" role="tabpanel">
+        <div id="queue-inline" class="np-pane">
+          <div class="np-qhead">
             <strong>Cola</strong>
             <span id="qi-count" class="hint"></span>
           </div>
-          <div id="qi-list" class="qpanel-list"></div>
+          <div id="qi-list" class="np-qlist" role="list">
+            <div class="hint empty">No hay nada en la cola. Reproduce un álbum o una playlist.</div>
+          </div>
         </div>
 
-        <div id="hp-panel" class="panel" hidden>
+        <div id="hp-panel" class="np-pane" hidden>
           <div class="field">
             <label for="hp-select">Corrección de auriculares (AutoEq)</label>
             <div class="row inline">
@@ -388,10 +403,10 @@
           </div>
         </div>
 
-        <div id="lyrics-panel" class="panel lyrics" hidden></div>
-        <div id="spectrum-panel" class="panel" hidden></div>
+        <div id="lyrics-panel" class="np-pane lyrics" hidden></div>
+        <div id="spectrum-panel" class="np-pane" hidden></div>
 
-        <div id="eq-panel" class="panel" hidden>
+        <div id="eq-panel" class="np-pane" hidden>
           <label class="check">
             <input id="eq-enabled" type="checkbox">
             Activar EQ (deja de ser bit-perfect)
@@ -416,7 +431,7 @@
         </div>
 
         <!-- Convolución por respuesta al impulso: corrección de sala / auriculares -->
-        <div id="conv-panel" class="panel" hidden>
+        <div id="conv-panel" class="np-pane" hidden>
           <div class="field">
             <label for="conv-select">Convolución (respuesta al impulso)</label>
             <div class="row inline">
@@ -424,12 +439,13 @@
               <button id="btn-conv-import" class="secondary">Importar IR…</button>
               <button id="btn-conv-del" class="secondary">Borrar</button>
             </div>
-            <small class="hint">La corrección más fiel posible: aplica la respuesta <em>medida</em> de tu sala o
+            <small class="hint">Aplica la respuesta <em>medida</em> de tu sala o
               auriculares en vez de aproximarla con filtros. Mide tu sala con un micrófono de medición y <strong>REW (roomeqwizard.com)</strong> y exporta el
-              impulso del filtro de corrección (la respuesta inversa), a .wav. La ganancia se normaliza automáticamente para que no recorte.</small>
+              impulso del filtro de corrección, a .wav. La ganancia se normaliza automáticamente para evitar recorte.</small>
           </div>
           <div id="conv-info" class="hint"></div>
         </div>
+        </section>
       </div>
     </section>
 
@@ -701,6 +717,33 @@
         </div>
       </details>
 
+      <!-- Last.fm: se conecta y desconecta al instante (no depende de «Guardar»). -->
+      <details class="adv" id="lastfm-box">
+        <summary>Last.fm: registrar lo que escuchas (opcional)</summary>
+        <small class="hint">
+          Es la <strong>única función que envía datos fuera de tu equipo</strong>: el artista, título y álbum
+          de cada canción que escuchas (más de la mitad o 4 minutos) a tu cuenta de Last.fm. Desactivada
+          hasta que la conectes. Crea tu app gratis en <strong>last.fm/api/account/create</strong> y pega
+          aquí su API key y su secreto.
+        </small>
+        <div class="row">
+          <div class="field">
+            <label for="cfg-lfm-key">API key</label>
+            <input id="cfg-lfm-key" type="text" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="cfg-lfm-secret">Secreto</label>
+            <input id="cfg-lfm-secret" type="password" autocomplete="off">
+          </div>
+        </div>
+        <div id="lfm-status" class="hint"></div>
+        <div class="actions">
+          <button id="btn-lfm-connect" class="secondary">Conectar con Last.fm</button>
+          <button id="btn-lfm-finish" class="primary" hidden>Ya lo autoricé</button>
+          <button id="btn-lfm-disconnect" class="secondary" hidden>Desconectar</button>
+        </div>
+      </details>
+
       <div class="actions">
         <button id="btn-save-cfg" class="primary">Guardar</button>
         <span id="cfg-status" class="hint"></span>
@@ -769,6 +812,28 @@
 
   <div id="toast" class="toast" hidden></div>
 
+  <script src="player-stage.js"></script>
+  <script src="parati-art.js"></script>
   <script src="app.js"></script>
+  <script src="biblioteca.js"></script>
+  <script src="seleccion.js"></script>
+  <script src="smart.js"></script>
+  <!-- Si algún .js/.css no llegó a cargar, la app quedaría congelada a medio
+       iniciar; se recarga la página. -->
+  <script>
+    addEventListener("load", function () {
+      var falta = typeof init !== "function" || !window.NowStage || !window.ForYouArt ||
+        typeof LIB === "undefined" ||
+        [].some.call(document.querySelectorAll('link[rel="stylesheet"]'), function (l) { return !l.sheet; });
+      var n = 0;
+      try { n = +(sessionStorage.getItem("hh-boot-retry") || 0); } catch (e) {}
+      if (falta && n < 2) {
+        try { sessionStorage.setItem("hh-boot-retry", String(n + 1)); } catch (e) {}
+        location.reload();
+      } else {
+        try { sessionStorage.removeItem("hh-boot-retry"); } catch (e) {}
+      }
+    });
+  </script>
 </body>
 </html>

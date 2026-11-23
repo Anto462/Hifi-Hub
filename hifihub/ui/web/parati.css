@@ -1,0 +1,277 @@
+/* ============================================================================
+   HiFi Hub — pantalla «Para ti».
+   Adaptación del prototipo «HiFi Hub Para ti» al sistema Tanatos: tokens de
+   tokens.css y SOLO fuentes locales (Archivo Wide → Anton/--font-display,
+   M PLUS 1 → IBM Plex Sans). Escala azul del prototipo → rampa voltage.
+   Se conservan las animaciones de ENTRADA de la versión anterior (fyIn
+   escalonado) y el hover de «Sigue escuchando».
+   ============================================================================ */
+
+#view-parati .fy-defs { position: absolute; width: 0; height: 0; }
+
+/* Entrada escalonada (la de siempre). `backwards` y no `both`: con `both` la
+   animación seguiría imponiendo transform:none y anularía el hover. */
+@keyframes fyIn { from { opacity: 0; transform: translateY(14px) skewY(1.2deg); } to { opacity: 1; transform: none; } }
+
+/* ---------- HERO ---------- */
+.fy-hero { position: relative; height: clamp(360px, 30vw, 420px); margin-top: calc(-1 * var(--space-03)); }
+/* La estela ocupa TODO el ancho de la ventana y baja por detrás de las secciones. */
+.fy-shards-box { position: absolute; top: 0; left: calc(50% - 50vw); width: 100vw; height: calc(100% + 220px);
+  z-index: 0; pointer-events: none;
+  -webkit-mask: linear-gradient(180deg, #000 0, #000 62%, transparent 100%);
+          mask: linear-gradient(180deg, #000 0, #000 62%, transparent 100%); }
+.fy-shards-box svg { display: block; width: 100%; height: 100%; }
+.fy-hero-in { position: absolute; inset: 0; z-index: 1; }
+.fy-hero-num { position: absolute; right: -0.02em; top: 2%; pointer-events: none;
+  font: 400 clamp(150px, 22vw, 300px)/0.8 var(--font-display); letter-spacing: -0.01em;
+  color: transparent; -webkit-text-stroke: 1.5px var(--glass-border-strong); }
+.fy-eyebrow { position: absolute; left: 0; top: 14px; display: flex; gap: 12px; align-items: center;
+  font: 500 11px/1 var(--font-mono); letter-spacing: 0.28em; text-transform: uppercase; color: var(--voltage-cyan); }
+.fy-eyebrow i { width: 5px; height: 5px; background: currentColor; transform: rotate(45deg); }
+.fy-kinetic { position: absolute; left: 23%; top: 74%; margin: 0; transform: rotate(-12deg); transform-origin: 0 50%;
+  display: flex; align-items: baseline; gap: 0.2em; white-space: nowrap; pointer-events: none;
+  font-family: var(--font-display); font-weight: 400; line-height: 0.85; text-transform: uppercase; }
+.fy-kinetic span { display: inline-block; }
+.fy-kinetic .k1 { font-size: clamp(18px, 2.2vw, 28px); padding: 0.12em 0.3em; transform: skewX(-12deg);
+  background: var(--voltage-cyan); color: var(--ink-100); }
+.fy-kinetic .k3 { font-size: clamp(50px, 6.6vw, 96px); color: var(--voltage-40); }
+.fy-kinetic .k4 { font-size: clamp(100px, 12.5vw, 184px); color: var(--white); letter-spacing: -0.01em; }
+
+/* Tu #1: carátula en duotono (el filtro va en el hijo para no teñir la sombra) */
+.fy-anchor { position: absolute; left: 0; bottom: 24px; display: grid; grid-template-columns: auto auto; gap: 14px;
+  align-items: end; padding: 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; }
+.fy-anchor-art { display: block; width: clamp(92px, 9vw, 120px); aspect-ratio: 1; box-shadow: 7px 7px 0 var(--voltage-60);
+  transition: transform var(--dur-base) var(--ease-snap), box-shadow var(--dur-base); }
+.fy-anchor-art i { display: block; width: 100%; height: 100%; background: var(--voltage-deep) center/cover no-repeat;
+  filter: url(#fy-duo-hero); }
+.fy-anchor:hover .fy-anchor-art { transform: translate(-3px, -3px); box-shadow: 10px 10px 0 var(--voltage-cyan); }
+.fy-anchor-lbl { display: grid; gap: 4px; max-width: 220px; }
+.fy-anchor-lbl em { font: 500 10px/1.5 var(--font-mono); font-style: normal; letter-spacing: 0.2em; padding: 2px 6px;
+  justify-self: start; background: var(--text-primary); color: var(--ink-100); }
+.fy-anchor-lbl b { font: 400 clamp(28px, 3vw, 38px)/0.9 var(--font-display); text-transform: uppercase; color: var(--white);
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.fy-anchor-lbl span { font: 700 13px/1.2 var(--font-sans); color: var(--text-tertiary); }
+.fy-anchor:hover .fy-anchor-lbl b { color: var(--voltage-cyan); }
+
+/* Cifras + Continuar, sobre vidrio */
+.fy-stats-box { position: absolute; right: 0; top: 46px; display: grid; gap: 14px; padding: 16px 18px;
+  border-radius: var(--radius-lg); background: var(--glass-dark-bg); border: 1px solid var(--glass-border-strong);
+  -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.3), 0 24px 50px -24px rgba(0,0,0,0.7); }
+.fy-stat-row { display: flex; gap: 18px; flex-wrap: wrap; justify-content: flex-end; }
+.fy-stat { display: flex; align-items: baseline; gap: 6px; }
+.fy-stat b { font: 700 clamp(26px, 2.8vw, 36px)/1 var(--font-rodin); font-variant-numeric: tabular-nums; color: var(--text-primary); }
+.fy-stat small { font: 500 10px/1 var(--font-mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-tertiary); }
+.fy-resume { display: flex; align-items: center; gap: 12px; padding: 10px 18px 10px 10px; cursor: pointer;
+  border-radius: 12px; background: var(--glass-light-bg); border: 1px solid var(--glass-border-strong); color: var(--text-primary);
+  transition: background var(--dur-fast), border-color var(--dur-fast); }
+.fy-resume:hover { background: rgba(255,255,255,0.12); border-color: var(--glass-border-volt); }
+.fy-resume .pl { width: 30px; height: 30px; flex: none; display: grid; place-items: center; border-radius: 8px;
+  background: var(--voltage-60); color: var(--white); }
+.fy-resume .pl i.ph-bold { font-size: 13px; vertical-align: 0; }
+.fy-resume .rt { display: grid; gap: 2px; text-align: left; min-width: 0; }
+.fy-resume .rt small { font: 500 9px/1.2 var(--font-mono); letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-tertiary); }
+.fy-resume .rt b { font: 700 14px/1.2 var(--font-sans); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fy-resume .bar { width: 90px; height: 3px; flex: none; background: var(--ink-70); position: relative; margin-left: auto; }
+.fy-resume .bar[hidden] { display: none; }
+.fy-resume .bar span { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--voltage-cyan); }
+
+@media (max-width: 760px) {
+  .fy-hero { height: auto; min-height: 560px; }
+  .fy-kinetic { left: 0; top: 40%; }
+  .fy-anchor { bottom: 200px; }
+  .fy-stats-box { left: 0; right: 0; top: auto; bottom: 16px; }
+  .fy-stat-row { justify-content: flex-start; }
+}
+
+/* ---------- Secciones ---------- */
+.fy-sec { position: relative; z-index: 1; padding-block: 40px 4px; display: grid; gap: 18px; }
+.fy-sec[hidden] { display: none; }
+.fy-sec-h { display: flex; align-items: center; gap: 14px; }
+.fy-sec-h h3 { margin: 0; font: 700 clamp(26px, 3.2vw, 34px)/1 var(--font-rodin); text-transform: uppercase;
+  letter-spacing: 0.01em; white-space: nowrap; color: var(--text-primary); }
+.fy-rule { flex: 1; min-width: 20px; height: 1px; position: relative; background: var(--glass-border-strong); }
+.fy-rule::after { content: ""; position: absolute; right: -3px; top: -3px; width: 7px; height: 7px;
+  background: var(--text-primary); transform: rotate(45deg); }
+
+/* Carriles horizontales: el scroll se queda dentro y los bordes se desvanecen */
+.fy-rail { display: grid; grid-auto-flow: column; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x proximity;
+  scrollbar-width: thin; scrollbar-color: var(--glass-border-strong) transparent;
+  -webkit-mask: linear-gradient(90deg, transparent, #000 14px, #000 calc(100% - 56px), transparent);
+          mask: linear-gradient(90deg, transparent, #000 14px, #000 calc(100% - 56px), transparent); }
+.fy-rail::-webkit-scrollbar { height: 3px; }
+.fy-rail::-webkit-scrollbar-thumb { background: var(--glass-border-strong); border-radius: 2px; border: 0; }
+.fy-rail > * { scroll-snap-align: start;
+  animation: fyIn var(--dur-base) var(--ease-violent-snap) backwards; animation-delay: calc(var(--i, 0) * 30ms); }
+
+/* --- Sigue escuchando: placa diagonal (prototipo) + hover de siempre --- */
+.fy-artists { grid-auto-columns: 132px; gap: 18px; padding: 8px 20px 14px; scroll-padding-inline: 20px; }
+.fy-artist { position: relative; isolation: isolate; display: grid; justify-items: center; gap: 6px;
+  padding: 0; border: 0; background: none; color: inherit; cursor: pointer; }
+.fy-plate { position: absolute; z-index: -1; left: 4px; right: 4px; top: 0; height: 126px; transform: skewX(-14deg);
+  background: linear-gradient(165deg, var(--voltage-70), var(--voltage-deep));
+  transition: background var(--dur-base), transform var(--dur-base) var(--ease-snap), opacity var(--dur-fast); }
+.fy-portrait { width: 112px; height: 112px; margin-top: 7px; border-radius: 50%;
+  background: var(--ink-80) center/cover no-repeat;
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.18), 0 10px 18px -8px rgba(0,0,0,0.7);
+  transition: transform var(--dur-fast) var(--ease-snap), box-shadow var(--dur-fast); }
+.fy-artist b { margin-top: 6px; max-width: 132px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 700 18px/1.1 var(--font-rodin); text-transform: uppercase; color: var(--text-primary); }
+.fy-artist small { font: 500 10px/1 var(--font-mono); color: var(--text-tertiary); }
+.fy-artist:hover .fy-plate, .fy-artist:focus-visible .fy-plate {
+  background: linear-gradient(165deg, var(--voltage-40), var(--voltage-70)); transform: skewX(-14deg) translateY(-3px); }
+.fy-artist:hover .fy-portrait, .fy-artist:focus-visible .fy-portrait {
+  transform: scale(1.06); box-shadow: 0 0 0 2px var(--voltage-cyan), 0 10px 18px -8px rgba(0,0,0,0.7); }
+.fy-artist:hover b { color: var(--voltage-30); }
+
+/* --- Vuelve al disco: funda con el vinilo dentro; sale al pasar por encima --- */
+.fy-albums { grid-auto-columns: clamp(150px, 15vw, 176px); gap: 28px; padding: 8px 70px 14px 18px; scroll-padding-inline: 18px; }
+.fy-alb { position: relative; display: grid; gap: 10px; align-content: start; padding: 0; border: 0;
+  background: none; color: inherit; text-align: left; cursor: pointer; }
+.fy-alb:hover, .fy-alb:focus-visible { z-index: 2; }
+.fy-sl { position: relative; aspect-ratio: 1; }
+.fy-vin { position: absolute; inset: 4%; border-radius: 50%;
+  background: repeating-radial-gradient(circle, var(--ink-100) 0 2px, var(--ink-95) 2px 3px);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.5);
+  transition: transform 0.55s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.fy-vin::after { content: ""; position: absolute; inset: 0; border-radius: 50%;
+  background: conic-gradient(from 220deg, transparent 0 12deg, rgba(255,255,255,0.22) 22deg, transparent 34deg 190deg,
+    rgba(255,255,255,0.14) 200deg, transparent 212deg); }
+/* La etiqueta del disco es la propia portada (como en el tocadiscos) */
+.fy-vin-label { position: absolute; inset: 35%; border-radius: 50%; background: var(--voltage-60) center/cover no-repeat;
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.6); }
+.fy-vin-label::after { content: ""; position: absolute; left: 50%; top: 50%; width: 8%; height: 8%;
+  transform: translate(-50%, -50%); border-radius: 50%; background: var(--ink-100); }
+.fy-alb:hover .fy-vin, .fy-alb:focus-visible .fy-vin { transform: translateX(42%) rotate(40deg); }
+.fy-sleeve { position: relative; display: block; width: 100%; height: 100%; border-radius: 3px;
+  background: var(--ink-80) center/cover no-repeat;
+  box-shadow: 0 14px 24px -12px rgba(0,0,0,0.7), inset 0 0 0 1px rgba(255,255,255,0.1); }
+.fy-alb-play { position: absolute; right: 8px; bottom: 8px; width: 34px; height: 34px; border-radius: 50%;
+  border: none; background: var(--voltage-60); color: var(--white); display: inline-flex; align-items: center;
+  justify-content: center; opacity: 0; transform: translateY(6px); cursor: pointer;
+  transition: opacity var(--dur-fast), transform var(--dur-fast) var(--ease-snap), background var(--dur-fast); }
+.fy-alb-play i.ph-bold { font-size: 15px; vertical-align: 0; }
+.fy-alb:hover .fy-alb-play, .fy-alb:focus-visible .fy-alb-play { opacity: 1; transform: none; }
+.fy-alb-play:hover { background: var(--voltage-40); }
+.fy-alb-txt { display: grid; gap: 2px; min-width: 0; }
+.fy-alb b { font: 700 14px/1.25 var(--font-sans); color: var(--text-primary);
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.fy-alb small { font: 400 12px/1.3 var(--font-sans); color: var(--text-tertiary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fy-alb:hover b { color: var(--voltage-30); }
+
+/* --- Recién añadido: registro de las 9 últimas entradas --- */
+.fy-log { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 4px 28px; }
+.fy-row { display: grid; grid-template-columns: 24px 52px minmax(0, 1fr) auto; gap: 14px; align-items: center;
+  padding: 8px 6px; border: 0; border-bottom: 1px solid var(--glass-border); background: none;
+  color: inherit; text-align: left; cursor: pointer; transition: background var(--dur-fast);
+  animation: fyIn var(--dur-base) var(--ease-violent-snap) backwards; animation-delay: calc(var(--i, 0) * 30ms); }
+.fy-row:hover { background: var(--glass-light-bg); }
+.fy-ix { font: 500 11px/1 var(--font-mono); color: var(--text-tertiary); }
+.fy-thumb { width: 52px; height: 52px; border-radius: 2px; background: var(--ink-80) center/cover no-repeat; }
+.fy-row-t { min-width: 0; }
+.fy-row-t b { display: block; font: 700 14px/1.3 var(--font-sans); color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fy-row-t small { display: block; font: 400 12px/1.3 var(--font-sans); color: var(--text-tertiary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fy-row:hover .fy-row-t b { color: var(--voltage-30); }
+.fy-chip { font: 500 10px/1.5 var(--font-mono); padding: 2px 6px; white-space: nowrap;
+  background: var(--text-primary); color: var(--ink-100); }
+.fy-chip.new { background: var(--voltage-cyan); }
+
+/* --- Tus mezclas: pósteres (tono + portada en duotono + motivo + título gigante) --- */
+.fy-mixes { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 12px; container-type: inline-size; }
+.fy-mix { grid-column: span 3; height: 230px; position: relative; overflow: hidden; isolation: isolate;
+  padding: 0; border: 0; text-align: left; cursor: pointer;
+  background: var(--bg); color: var(--fg, var(--white));
+  animation: fyIn var(--dur-base) var(--ease-violent-snap) backwards; animation-delay: calc(var(--i, 0) * var(--stagger));
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.fy-mix:hover, .fy-mix:focus-visible { transform: translateY(-4px); }
+.fy-mix.feat { grid-column: span 6; grid-row: span 2; height: auto; min-height: 472px; }
+.fy-mix.wide { grid-column: span 6; }
+@container (max-width: 900px) {
+  .fy-mix { grid-column: span 6; }
+  .fy-mix.feat { grid-column: span 12; min-height: 380px; }
+  .fy-mix.wide { grid-column: span 12; }
+}
+@container (max-width: 520px) { .fy-mix, .fy-mix.wide { grid-column: span 12; } }
+
+/* La primera pista de la mezcla, al fondo y en el tono de la tarjeta, con el
+   corte diagonal de la versión anterior. */
+.fy-mix-cover { position: absolute; inset: 0; z-index: -2; background: center/cover no-repeat;
+  filter: grayscale(1) contrast(1.15); mix-blend-mode: luminosity; opacity: 0.42;
+  clip-path: polygon(0 0, 100% 0, 100% 68%, 0 100%); }
+.fy-mix.light .fy-mix-cover { opacity: 0.3; }
+.fy-mix svg.motif { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; }
+.fy-mix .sweep { position: absolute; inset: -20%; z-index: 1; pointer-events: none; transform: translateX(-80%);
+  background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.22) 48%, rgba(255,255,255,0.05) 52%, transparent 60%); }
+.fy-mix:hover .sweep, .fy-mix:focus-visible .sweep { transform: translateX(80%); transition: transform 1s cubic-bezier(0.3, 0.6, 0.2, 1); }
+.fy-mix .kick { position: absolute; left: 16px; top: 14px; display: flex; gap: 8px; align-items: center;
+  font: 500 10px/1 var(--font-mono); letter-spacing: 0.22em; text-transform: uppercase; }
+.fy-mix .kick i { width: 5px; height: 5px; background: currentColor; transform: rotate(45deg); }
+.fy-mix .desc { position: absolute; left: 16px; top: 34px; max-width: 60%; font: 400 12px/1.35 var(--font-sans); opacity: 0.85; }
+.fy-mix .count { position: absolute; right: 16px; top: 12px; display: grid; text-align: right; }
+.fy-mix .count b { font: 700 34px/1 var(--font-rodin); font-variant-numeric: tabular-nums; }
+.fy-mix .count small { font: 500 10px/1.2 var(--font-mono); letter-spacing: 0.1em; opacity: 0.8; }
+.fy-mix .giant { position: absolute; left: -0.04em; bottom: -0.1em; white-space: nowrap;
+  font: 400 64px/0.82 var(--font-display); text-transform: uppercase; letter-spacing: -0.005em;
+  color: var(--fg, var(--white)); transform: rotate(-8deg); transform-origin: 0 100%;
+  transition: transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.fy-mix:hover .giant, .fy-mix:focus-visible .giant { transform: rotate(-8deg) translate(16px, -4px); }
+.fy-mix .acts { position: absolute; right: 14px; bottom: 14px; display: flex; gap: 8px; z-index: 2; }
+.fy-mix .acts button { width: 38px; height: 38px; padding: 0; border-radius: 50%; display: grid; place-items: center;
+  color: var(--white); background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.4);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1.4), box-shadow 0.3s, background var(--dur-fast); }
+.fy-mix .acts button i.ph-bold { font-size: 15px; vertical-align: 0; }
+.fy-mix .acts .fy-play { background: var(--white); color: var(--ink-100); border-color: var(--white); }
+.fy-mix:hover .acts .fy-play { transform: scale(1.12); box-shadow: 0 0 0 6px rgba(255,255,255,0.18); }
+.fy-mix .acts .fy-save:hover { background: rgba(255,255,255,0.28); }
+.fy-mix.light .acts .fy-save { color: var(--ink-100); border-color: rgba(10,10,13,0.4); background: rgba(10,10,13,0.08); }
+
+/* Colores de los motivos (tokens) */
+.fy-mix .f-sun { fill: var(--support-warning); }
+.fy-mix .s-sun { stroke: var(--support-warning); }
+.fy-mix .f-bg { fill: var(--bg); }
+.fy-mix .f-ink { fill: var(--ink-100); }
+.fy-mix .s-ink { stroke: var(--ink-100); }
+.fy-mix .f-glass { fill: rgba(255,255,255,0.7); }
+.fy-mix .f-accent { fill: var(--voltage-30); }
+.fy-mix .f-mint { fill: var(--hp-cyan); }
+
+/* Animaciones de hover de cada motivo (prototipo) */
+.fy-mix .mv { transform-box: fill-box; transform-origin: center;
+  transition: transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.5s;
+  transition-delay: var(--d, 0ms); }   /* el retardo DESPUÉS del shorthand, que lo pondría a 0 */
+.m-moon .mv-stripes rect { transform-box: fill-box; transition: transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition-delay: var(--d, 0ms); }
+.m-moon:hover .mv-moon { transform: rotate(-28deg) scale(1.1); }
+.m-moon:hover .mv-stripes rect { transform: translateX(-36px); }
+.m-shards:hover .mv-shard { transform: translate(var(--dx), var(--dy)) rotate(var(--rt)); }
+.m-slash:hover .mv-sa { transform: translateX(34px); }
+.m-slash:hover .mv-sb { transform: translateX(-22px); }
+.m-slash:hover .mv-sc { opacity: 1; transform: translateX(40px); }
+.m-circle:hover .mv-disc { transform: scale(1.14); }
+.fy-mix .mv-line { transform-origin: top; }
+.m-circle:hover .mv-line { transform: scaleY(0.35); }
+.fy-mix .mv-orbit { transform-box: view-box; transform-origin: 250px 95px; }
+.m-orbit:hover .mv-orbit { transform: rotate(-10deg) scale(1.06); }
+.m-beam:hover .mv-beam1 { transform: translateX(-30px); }
+.m-beam:hover .mv-beam2 { transform: translateX(-60px); }
+.m-sun:hover .mv-sun { transform: translateY(-14px) scale(1.06); }
+.fy-mix .mv-halo { transform-origin: center; }
+.m-sun:hover .mv-halo { opacity: 0.7; transform: translateY(-14px) scale(1.35); }
+.fy-mix .mv-dash { animation: fySpin 14s linear infinite; animation-play-state: paused; }
+.m-dash:hover .mv-dash { animation-play-state: running; }
+.m-dash:hover .mv-tri { transform: scale(1.25); }
+.m-arches:hover .mv-arch { transform: translateY(-14px); }
+@keyframes fySpin { to { transform: rotate(360deg); } }
+
+#view-parati :focus-visible { outline: 2px solid var(--voltage-cyan); outline-offset: 3px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .fy-rail > *, .fy-row, .fy-mix { animation: none !important; }
+  .fy-mix .mv, .fy-mix .giant, .fy-mix .sweep, .fy-mix .acts button, .fy-vin, .fy-plate, .fy-portrait { transition: none !important; }
+  .fy-mix .mv-dash { animation: none; }
+  .fy-mix:hover .sweep { transform: translateX(-80%); }
+}

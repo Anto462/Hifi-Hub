@@ -180,8 +180,9 @@ def headline_stats(lib) -> dict[str, Any]:
         "SELECT COUNT(*) tracks, COALESCE(SUM(play_count), 0) plays, "
         "COUNT(DISTINCT album) albums FROM tracks"
     ).fetchone()
+    # id y portada: la cabecera muestra la carátula del #1 y lo reproduce al pulsarlo.
     top = c.execute(
-        "SELECT title, COALESCE(album_artist, artist) AS artist, play_count "
+        "SELECT id, title, COALESCE(album_artist, artist) AS artist, play_count, cover_path "
         "FROM tracks WHERE play_count > 0 ORDER BY play_count DESC LIMIT 1"
     ).fetchone()
     return {
@@ -192,13 +193,13 @@ def headline_stats(lib) -> dict[str, Any]:
     }
 
 
-# --- Tiras de «recientes» -----------------------------------------------------
+# --- Explorador de «recientes» -----------------------------------------------------
 # Formato distinto al de las mezclas a propósito: son atajos para continuar donde
-# lo dejaste, no colecciones para explorar.
+# quedo la cancion, se diferencia asi de los albumes o pistas nuevas.
 
-MIN_STRIP = 2            # umbral bajo a propósito: un carril horizontal con 2
-                         # elementos se lee bien, y quien acaba de importar dos
-                         # álbumes debe ver justo eso en su pantalla de inicio.
+MIN_STRIP = 2            # Para mantener el carril horizontal en 2, de manera que sea mas pequeño
+                         # busca que se puedan verificar los nuevos elementos y importaciones facilmente
+                         # álbumes se debe ver justo en la pantalla de inicio.
 
 
 def recent_artists(lib, limit: int = 12) -> list[dict[str, Any]]:

@@ -1,6 +1,6 @@
 """HiFi Hub — Gestor y reproductor de bibliotecas musicales Hifi."""
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 # Si el usuario actualizó yt-dlp desde la app, la copia
 # nueva vive en CONFIG_DIR/overrides/ y debe tener precedencia sobre la del

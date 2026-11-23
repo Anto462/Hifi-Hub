@@ -68,6 +68,17 @@ class PlaybackController:
         self._listening_mode = False           # prioriza el audio bajo carga
         self._solo_band: int | None = None     # banda aislada del EQ (afinar de oído)
         self._convolution: str | None = None   # ruta del IR activo
+        # Pista retomada de la sesión anterior: ya se contó al escucharla, así que
+        # su primer cambio de pista no vuelve a sumar una reproducción.
+        self._resume_id: int | None = None
+        self._resume_announced = False   # ¿ya llegó su primer playlist-pos?
+        # Índice al que debe llegar mpv tras restore(): en un mpv recién creado llega
+        # a veces antes un playlist-pos 0 inicial (medido: 4 de 15 arranques).
+        self._await_pos: int | None = None
+        # Índice que mpv anunciará como eco de un reordenamiento de la cola: ese
+        # playlist-pos no es un cambio de pista y se ignora (ver move_in_queue).
+        self._expect_pos: int | None = None
+        self._stopping = False   # descarta el end-file de una parada deliberada (stop)
         # Scrobbling (Last.fm): seguimiento de cuánto sonó la pista actual.
         self._scrobbler = scrobbler
         self._played_track: dict[str, Any] | None = None
@@ -103,6 +114,56 @@ class PlaybackController:
     def play_album(self, album: str | None) -> None:
         self.play_tracks(self.lib.album_tracks(album))
 
+    def restore(self, rows, index: int = 0, position: float = 0.0, shuffle: bool = False,
+                repeat: str = REPEAT_OFF, volume: float = 100.0, paused: bool = False) -> None:
+        """Retoma una cola tal cual se dejó: mismo orden, pista, segundo y modos.
+
+        El orden guardado YA es el barajado, así que el aleatorio solo se marca, no
+        se vuelve a barajar. Emite `player:modes` para que la interfaz sincronice
+        sus botones de aleatorio/repetir y el volumen. Con `paused` queda cargada
+        en pausa.
+        """
+        self._queue = [_row_to_track(r) for r in rows]
+        if not self._queue:
+            return
+        self._index = max(0, min(int(index), len(self._queue) - 1))
+        self._shuffle = bool(shuffle)
+        self._resume_id = self._queue[self._index].get("id")
+        self._resume_announced = False
+        self._await_pos = self._index if self._index > 0 else None
+        self.set_volume(volume)
+        self._player.load_at([t["path"] for t in self._queue], self._index,
+                             max(0.0, float(position or 0)))
+        if paused:
+            self._player.set_pause(True)
+        else:
+            # Si mpv ya estaba sin pausa no hay evento `pause`: se avisa a mano para
+            # que los botones no se queden en «play» con el audio sonando.
+            self._emit("player:state", {"playing": True})
+        self.set_repeat(repeat)
+        # Sin _emit_track(): load_at provoca UN único playlist-pos (medido) y es
+        # ese evento el que la anuncia; llamarlo aquí lo duplicaría.
+        self._emit("player:modes", {"shuffle": self._shuffle, "repeat": self._repeat,
+                                    "volume": self._volume})
+
+    def stop(self) -> None:
+        """Detiene y vacía la cola: mpv suelta los archivos que tenía abiertos.
+
+        Lo usa la API antes de reescribir el archivo que suena (tags, portada).
+        El `end-file` de esta parada llega ASÍNCRONO y podría caer después de que
+        la API retome la cola. Por eso el estado se avisa aquí, en orden, y ese
+        end-file se descarta. Esto pasa siempre y cuando hubiese algo cargado.
+        """
+        self._stopping = self.current_track() is not None
+        self._queue = []
+        self._index = -1
+        self._player.stop()
+        self._emit("player:state", {"playing": False})
+
+    def flush_scrobble(self) -> None:
+        """Decide el scrobble de la pista en curso cuando se cierra la app."""
+        self._maybe_scrobble()
+
     def add_to_queue(self, rows) -> int:
         """Añade pistas al final de la cola sin interrumpir. Si no hay nada
         sonando, arranca la reproducción. Devuelve cuántas se añadieron."""
@@ -119,6 +180,36 @@ class PlaybackController:
         self._emit_neighbours()   # encolar cambia la "siguiente"
         return len(tracks)
 
+    def move_in_queue(self, src: int, dst: int) -> bool:
+        """Reordena la cola, permitiendo arrastrar las pistas dentro de la cola sin interrumpir la escucha.
+
+        `dst` es la posición FINAL de la pista. Medido: mover entradas en mpv
+        cambia su playlist-pos aunque siga sonando la misma pista; ese eco se
+        marca en `_expect_pos` y se ignora, para no contar otra reproducción ni
+        reiniciar la escena del tocadiscos. Solo se marca si el índice cambia de
+        verdad. si no, mpv no avisa y el marcador se tragaría un cambio real.
+        """
+        n = len(self._queue)
+        if not (0 <= src < n and 0 <= dst < n) or src == dst:
+            return False
+        cur = self._index
+        if src == cur:
+            new = dst
+        elif src < cur <= dst:
+            new = cur - 1
+        elif dst <= cur < src:
+            new = cur + 1
+        else:
+            new = cur
+        self._queue.insert(dst, self._queue.pop(src))
+        self._index = new
+        if new != cur:
+            self._expect_pos = new
+        self._player.move(src, dst)
+        self._emit("player:queue", self.get_queue())
+        self._emit_neighbours()
+        return True
+
     def current_path(self) -> str | None:
         t = self.current_track()
         return t["path"] if t else None
@@ -131,6 +222,13 @@ class PlaybackController:
                         "bit_depth": None, "bit_rate": None, "lossless": False}]
         self._index = 0
         self._player.load([path], 0)
+
+    def set_scrobbler(self, scrobbler: Any) -> None:
+        """Conecta/desconecta Last.fm en caliente (None = sin scrobbling).
+
+        La pista en curso conserva su cronómetro: si se conecta a mitad de una
+        canción, esa canción también cuenta al terminar."""
+        self._scrobbler = scrobbler
 
     def toggle_pause(self) -> dict:
         paused = self._player.toggle_pause()
@@ -568,15 +666,44 @@ class PlaybackController:
             self._apply_listening_mode(playing)
             self._emit("player:state", {"playing": playing})
         elif name == "playlist-pos":
+            # Tras restore(): índices previos al pedido son el valor inicial de un mpv
+            # recién creado, no una pista que suene. Si la pedida fallara y mpv saltara
+            # a la siguiente (índice mayor), se acepta: la marca nunca se queda puesta.
+            if self._await_pos is not None:
+                if int(value) < self._await_pos:
+                    return
+                self._await_pos = None
+            # Eco de move_in_queue: sigue sonando la misma pista, solo cambió su sitio.
+            # mpv puede REPETIR el aviso con el mismo valor (medido), así que la marca
+            # se mantiene hasta que llega otro índice, no se consume con el primero.
+            if self._expect_pos is not None:
+                if int(value) == self._expect_pos:
+                    return
+                self._expect_pos = None
+            # Duplicado del aviso de la pista recién retomada: ya se anunció una vez.
+            if (self._resume_id is not None and self._resume_announced
+                    and 0 <= int(value) < len(self._queue)
+                    and self._queue[int(value)].get("id") == self._resume_id):
+                return
             # Antes de cambiar de pista, decidir si la anterior se scrobblea.
             self._maybe_scrobble()
             self._index = int(value)
             track = self.current_track()
             if track:
-                if track.get("id"):
+                if track.get("id") and track["id"] != self._resume_id:
                     self.lib.mark_played(track["id"])
+                if track.get("id") is not None and track.get("id") == self._resume_id:
+                    self._resume_announced = True   # retomada: se anuncia sin contarla
+                else:
+                    self._resume_id = None          # ya suena otra: retomar quedó atrás
                 self._emit_track()
         elif name == "end-file":
+            if self._stopping:        # eco de stop(): el estado ya se avisó allí
+                self._stopping = False
+                return
             # Fin natural de toda la cola (sin repeat): notificar parada.
             if self._index >= len(self._queue) - 1 and self._repeat == REPEAT_OFF:
                 self._emit("player:state", {"playing": False, "ended": True})
+        elif name == "device-busy":
+            # Otra app tiene el dispositivo en exclusiva: mpv reintenta en silencio.
+            self._emit("player:device-busy", {"exclusive": self._exclusive})

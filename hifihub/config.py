@@ -107,6 +107,8 @@ class Config:
     lastfm_api_key: str = ""
     lastfm_api_secret: str = ""
     lastfm_session_key: str = ""
+    # Usuario de Last.fm de la sesión conectada (solo para mostrarlo en Ajustes).
+    lastfm_username: str = ""
 
     def __post_init__(self) -> None:
         if not self.download_dir:

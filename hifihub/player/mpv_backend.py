@@ -1,8 +1,8 @@
 """Wrapper de libmpv (python-mpv) para reproducción bit-perfect.
 
-libmpv posee su propia lista de reproducción; la usamos para conseguir gapless
-real. El resto
-del sistema controla la reproducción a través de esta clase, nunca tocando mpv
+libmpv posee su propia lista de reproducción; se usa para conseguir gapless
+real.
+El resto del sistema controla la reproducción a través de esta clase, nunca tocando mpv
 directamente.
 
 Ajustes por defecto:
@@ -16,6 +16,7 @@ Ajustes por defecto:
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -48,12 +49,17 @@ class MpvPlayer:
             raise PlayerError(f"No se pudo cargar libmpv: {e}") from e
 
         self._on_event = on_event
+        self._busy_at = 0.0   # último aviso de "dispositivo ocupado" (antes de crear mpv)
         kwargs: dict[str, Any] = dict(
             video=False,
             ytdl=False,
             gapless_audio="yes",
             audio_display="no",
             replaygain=replaygain,
+            # Solo errores: es el único canal por el que libmpv delata un
+            # dispositivo ocupado (ver _on_log). Nivel bajo = casi sin tráfico.
+            log_handler=self._on_log,
+            loglevel="error",
         )
         if ao is not None:  # 'null' en tests headless
             kwargs["ao"] = ao
@@ -63,6 +69,25 @@ class MpvPlayer:
     def _emit(self, name: str, value: Any) -> None:
         if self._on_event is not None:
             self._on_event(name, value)
+
+    # Cada cuánto, como mucho, se avisa del dispositivo ocupado: mpv reintenta
+    # abrirlo en bucle y escribe el mismo error varias veces por segundo.
+    BUSY_EVERY = 5.0
+
+    def _on_log(self, level: str, component: str, message: str) -> None:
+        """Detecta el dispositivo de audio ocupado por otra app en exclusiva.
+
+        Midiendo con este libmpv con el dispositivo tomado en exclusiva por otro
+        proceso NO hay `end-file` ni salto de pista. mpv se queda reintentando
+        (log: AUDCLNT_E_DEVICE_IN_USE) y el audio no avanza. El log es la única señal.
+        """
+        if component != "ao/wasapi" or "DEVICE_IN_USE" not in message:
+            return
+        now = time.monotonic()
+        if now - self._busy_at < self.BUSY_EVERY:
+            return
+        self._busy_at = now
+        self._emit("device-busy", None)
 
     def _wire_observers(self) -> None:
         m = self._mpv
@@ -102,9 +127,37 @@ class MpvPlayer:
             self._mpv.playlist_pos = start
         self._mpv.pause = False
 
+    def load_at(self, files: list[str], start: int = 0, position: float = 0.0) -> None:
+        """Carga una lista y empieza en `start`, en el segundo `position`.
+
+        Para retomar una sesión. A diferencia de `load()`, no arranca la primera
+        pista para saltar después: se vacía, se añaden todas SIN reproducir y se
+        salta a `start`. Medido: así mpv emite un único `playlist-pos` (el de
+        `start`) en vez de 0 y luego `start`. El `start=` va solo en esa pista, así
+        que la siguiente empieza desde el principio.
+        """
+        if not files:
+            return
+        self._mpv.command("stop")
+        for i, f in enumerate(files):
+            if i == start and position > 0:
+                self._mpv.command("loadfile", f, "append", -1, f"start={position:.3f}")
+            else:
+                self._mpv.command("loadfile", f, "append")
+        self._mpv.playlist_pos = start
+        self._mpv.pause = False
+
     def play_index(self, index: int) -> None:
         self._mpv.playlist_pos = index
         self._mpv.pause = False
+
+    def move(self, src: int, dst: int) -> None:
+        """Mueve una entrada de la lista sin cortar lo que suena.
+
+        `playlist-move` de mpv inserta ANTES de `dst`  previa al
+        movimiento para dejarla en la posición final `dst`. En cuanto avanza hay
+        que apuntar una más allá."""
+        self._mpv.command("playlist-move", src, dst + 1 if dst > src else dst)
 
     def append_file(self, path: str) -> None:
         """Añade una pista al final de la lista de mpv sin cortar lo que suena."""
