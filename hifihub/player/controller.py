@@ -18,6 +18,10 @@ from hifihub.player.mpv_backend import MpvPlayer
 EventCallback = Callable[[str, dict], None]
 
 REPEAT_OFF, REPEAT_ALL, REPEAT_ONE = "off", "all", "one"
+# Motivos de fin de archivo de mpv (MpvEventEndFile) que cierran la cola: EOF (fin
+# natural de la pista) y ERROR (no se pudo abrir: mpv se queda inactivo, sin audio).
+END_EOF, END_ERROR = 0, 4
+END_FINAL = (END_EOF, END_ERROR)
 
 
 def _row_to_track(row) -> dict[str, Any]:
@@ -78,7 +82,6 @@ class PlaybackController:
         # Índice que mpv anunciará como eco de un reordenamiento de la cola: ese
         # playlist-pos no es un cambio de pista y se ignora (ver move_in_queue).
         self._expect_pos: int | None = None
-        self._stopping = False   # descarta el end-file de una parada deliberada (stop)
         # Scrobbling (Last.fm): seguimiento de cuánto sonó la pista actual.
         self._scrobbler = scrobbler
         self._played_track: dict[str, Any] | None = None
@@ -150,11 +153,9 @@ class PlaybackController:
         """Detiene y vacía la cola: mpv suelta los archivos que tenía abiertos.
 
         Lo usa la API antes de reescribir el archivo que suena (tags, portada).
-        El `end-file` de esta parada llega ASÍNCRONO y podría caer después de que
-        la API retome la cola. Por eso el estado se avisa aquí, en orden, y ese
-        end-file se descarta. Esto pasa siempre y cuando hubiese algo cargado.
+        El estado se avisa aquí, en orden: el `end-file` de esta parada llega
+        asíncrono, pero con motivo ABORTED, y la rama end-file lo ignora.
         """
-        self._stopping = self.current_track() is not None
         self._queue = []
         self._index = -1
         self._player.stop()
@@ -698,12 +699,16 @@ class PlaybackController:
                     self._resume_id = None          # ya suena otra: retomar quedó atrás
                 self._emit_track()
         elif name == "end-file":
-            if self._stopping:        # eco de stop(): el estado ya se avisó allí
-                self._stopping = False
+            # Solo un final NATURAL (EOF) puede cerrar la cola. Al cargar otra lista
+            # o al hacer stop(), mpv corta el archivo anterior con motivo ABORTED: si
+            # la nueva lista empezaba en su última pista por ejemplo al presionar reproducir ahora»
+            # ese corte se leía como «terminó todo» y la interfaz quedaba en pausa aun con el audio sonando. Era un error visual.
+            # ya que mpv no avanza ni vuelve a avisar.
+            if getattr(value, "reason", END_EOF) not in END_FINAL:
                 return
-            # Fin natural de toda la cola (sin repeat): notificar parada.
+            # Fin natural de toda la cola - notificar parada.
             if self._index >= len(self._queue) - 1 and self._repeat == REPEAT_OFF:
                 self._emit("player:state", {"playing": False, "ended": True})
         elif name == "device-busy":
-            # Otra app tiene el dispositivo en exclusiva: mpv reintenta en silencio.
+            # Otra app tiene el dispositivo en exclusiva - mpv reintenta en silencio.
             self._emit("player:device-busy", {"exclusive": self._exclusive})

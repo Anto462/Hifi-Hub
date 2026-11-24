@@ -595,8 +595,13 @@ function openActionMenu(anchor, items) {
     it.addEventListener("click", () => { menu.hidden = true; fn(); });
     menu.appendChild(it);
   });
-  menu.hidden = false;
-  placeMenu(menu, anchor);
+  // Se abre cuando ESTE clic termina de propagarse: el manejador de app.js que
+  // cierra el menú al pulsar fuera escucha en `document`, corre después y lo
+  // cerraba al instante (el «⋯» de la cabecera parecía no hacer nada).
+  setTimeout(() => {
+    menu.hidden = false;
+    placeMenu(menu, anchor);
+  });
 }
 
 async function deleteAlbum() {

@@ -324,6 +324,7 @@
 .sm-box > * { flex: none; }
 .sm-match { margin: var(--space-03) 0 var(--space-03); font-size: 13px; color: var(--text-secondary); }
 .sm-match select { width: auto; display: inline-block; margin: 0 6px; }
+.sm-hint { display: block; margin: -4px 0 var(--space-03); }
 .sm-box > .sm-rules { flex: 0 1 auto; min-height: 52px; }
 .sm-rules { display: grid; align-content: start; gap: 8px; overflow-y: auto; }
 .sm-box .modal-title { margin-bottom: var(--space-04); }

@@ -226,13 +226,34 @@ def _rule_sql(rule: dict[str, Any], now: float) -> tuple[str, list]:
     return f"{expr} {sym} ?", [v]
 
 
+_POSITIVE_TEXT = ("contains", "is", "starts")
+
+
 def _where(spec: dict[str, Any]) -> tuple[str, list]:
+    """WHERE de las reglas.
+
+    Se ajustan las reglas para evitar que se utilizen and en tags que tiene mas sentdo usar or, por ejemplo
+    un Artista contiene X + Artista contiene Y = canciones de X o de Y. Esto permite a la playlist ajustarse a las canciones de ambos artistas y actulizarse
+    , si se unieran con un and como anteriormente pasaba la lista smart buscaria pistas en las cuales participen los dos a la vez.
+    Las negativas por ejemplo «no contiene Hyde» y las numéricas o de fecha siguen con «y».
+    Por ejemplo para excluir ambos valores o acotar un rango Ej: «año > 2000» y «año < 2010».
+    """
     now = time.time()
-    parts, params = [], []
-    for rule in spec["rules"]:
+    # Clave -> reglas que se unen con OR. Las agrupables comparten la clave de su
+    # campo; el resto usa su índice. El dict conserva el orden, así
+    # que cada grupo queda donde apareció su primera regla.
+    buckets: dict[str | int, list[tuple[str, list]]] = {}
+    for i, rule in enumerate(spec["rules"]):
         sql, p = _rule_sql(rule, now)
-        parts.append(sql)
-        params += p
+        grouped = (spec["match"] == "all" and FIELDS[rule["field"]]["type"] == "text"
+                   and rule["op"] in _POSITIVE_TEXT)
+        buckets.setdefault(rule["field"] if grouped else i, []).append((sql, p))
+    parts, params = [], []
+    for members in buckets.values():
+        parts.append(members[0][0] if len(members) == 1
+                     else "(" + " OR ".join(m[0] for m in members) + ")")
+        for _, p in members:
+            params += p
     if not parts:
         return "1", []
     return (" OR " if spec["match"] == "any" else " AND ").join(parts), params
